@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sheldon Rover Interface</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #e0e0e0;
+            --accent-color: #007aff;
+            --error-color: #ff3b30;
+            --success-color: #34c759;
+            --panel-bg: #1c1c1e;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Start Overlay */
+        #start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #start-btn {
+            padding: 20px 40px;
+            font-size: 1.5rem;
+            background-color: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(52, 199, 89, 0.4);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* Status & Config */
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        #connection-status {
+            font-weight: bold;
+            color: var(--error-color);
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            background: #333;
+            border: 1px solid #555;
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 8px;
+        }
+
+        /* State Display */
+        .state-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .state-item {
+            background: #2c2c2e;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .state-label {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .state-val {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        /* Last Spoken */
+        #last-spoken {
+            font-style: italic;
+            color: #4ecdc4;
+            min-height: 3em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Controls */
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        button.control-btn {
+            padding: 12px;
+            background-color: #3a3a3c;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button.control-btn:active {
+            background-color: #555;
+        }
+
+        button.danger {
+            background-color: #ff3b30;
+        }
+
+        button.mode {
+            background-color: #007aff;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .mock-toggle {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="start-overlay">
+        <button id="start-btn">TAP TO INITIALIZE</button>
+        <p style="margin-top:20px; color:#aaa;">Required for Audio Output</p>
+    </div>
+
+    <h1>Sheldon Rover Interface</h1>
+
+    <!-- Config Panel -->
+    <div class="panel">
+        <div class="status-header">
+            <span>Status: <span id="connection-status">DISCONNECTED</span></span>
+            <span id="backend-indicator"
+                style="font-size:0.8rem; border:1px solid #444; padding:2px 6px; border-radius:4px;">ESP32</span>
+        </div>
+        <label style="font-size:0.8rem; display:block; text-align:left; margin-bottom:4px;">Target URL</label>
+        <input type="text" id="target-url" value="http://192.168.4.1">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="mock-toggle">
+                <input type="checkbox" id="mock-mode"> <label for="mock-mode">Mock Demo Mode</label>
+            </div>
+            <button class="control-btn" id="update-url-btn" style="width:auto; padding:5px 15px;">Update</button>
+        </div>
+    </div>
+
+    <!-- State Panel -->
+    <div class="panel">
+        <p style="font-size:0.8rem; margin:0 0 5px 0; color:#888;">LAST EVENT</p>
+        <div id="last-event" style="font-weight:bold; font-size:1.2rem; margin-bottom:15px;">NONE</div>
+
+        <p style="font-size:0.8rem; margin:0 0 5px 0; color:#888;">SPEAKING</p>
+        <div id="last-spoken">...</div>
+    </div>
+
+    <!-- Controls Panel -->
+    <div class="panel">
+        <p style="text-align:left; margin-top:0;">Manual Override</p>
+        <div class="control-grid">
+            <button class="control-btn danger" onclick="app.manualEvent('COLLISION')">Collision</button>
+            <button class="control-btn danger" onclick="app.manualEvent('STUCK')">Stuck</button>
+            <button class="control-btn" onclick="app.manualEvent('SAW_HUMAN')">Saw Human</button>
+            <button class="control-btn" onclick="app.manualEvent('RANDOM')">Random</button>
+        </div>
+        <div class="control-grid" style="margin-top:10px;">
+            <button class="control-btn" onclick="app.stopAudio()">Mute/Stop</button>
+        </div>
+    </div>
+
+    <!-- Load Audio Map (generated by manage_assets.py) -->
+    <script src="lines_map.js"></script>
+    <script>
+        // Ensure map exists
+        window.AUDIO_ID_MAP = window.AUDIO_ID_MAP || {};
+        window.LINES = window.LINES || {};
+
+        const CONFIG = {
+            pollInterval: 300,
+            defaultUrl: "http://192.168.4.1"
+        };
+
+        /*
+           CHARACTER ENGINE
+           Simply maps Events to Audio IDs
+        */
+        class CharacterEngine {
+            constructor(ui) {
+                this.ui = ui;
+            }
+
+            processEvent(eventOrId) {
+                // Returns {id, file, text} or null
+
+                let selectedId = null;
+
+                // 1. Check if input is a known CATEGORY (e.g., COLLISION)
+                if (window.LINES[eventOrId]) {
+                    const idList = window.LINES[eventOrId];
+                    if (idList && idList.length > 0) {
+                        // Pick random
+                        selectedId = idList[Math.floor(Math.random() * idList.length)];
+                    }
+                }
+                // 2. Check if input is a direct AUDIO ID (passed as string or number)
+                else if (window.AUDIO_ID_MAP[eventOrId]) {
+                    selectedId = eventOrId;
+                }
+
+                if (selectedId && window.AUDIO_ID_MAP[selectedId]) {
+                    return {
+                        id: selectedId,
+                        ...window.AUDIO_ID_MAP[selectedId]
+                    };
+                }
+
+                return null;
+            }
+        }
+
+        /*
+           APP LOGIC (Network & Audio)
+        */
+        const app = {
+            engine: null,
+            timer: null,
+            baseUrl: CONFIG.defaultUrl,
+            isMock: false,
+            currentAudio: null,
+
+            init: function () {
+                this.engine = new CharacterEngine(this);
+
+                // UI Bindings
+                document.getElementById('start-btn').addEventListener('click', () => {
+                    this.start();
+                });
+
+                document.getElementById('update-url-btn').addEventListener('click', () => {
+                    this.baseUrl = document.getElementById('target-url').value;
+                    if (this.timer) clearInterval(this.timer);
+                    this.startPolling();
+                });
+
+                document.getElementById('mock-mode').addEventListener('change', (e) => {
+                    this.isMock = e.target.checked;
+                    document.getElementById('backend-indicator').textContent = this.isMock ? "MOCK" : "ESP32";
+                    document.getElementById('backend-indicator').style.borderColor = this.isMock ? "#007aff" : "#444";
+                });
+            },
+
+            start: function () {
+                // Initialize Audio Context
+                const synth = window.speechSynthesis;
+                const utterance = new SpeechSynthesisUtterance("Initializing.");
+                synth.speak(utterance);
+
+                document.getElementById('start-overlay').classList.add('hidden');
+                this.startPolling();
+            },
+
+            startPolling: function () {
+                if (this.timer) clearInterval(this.timer);
+
+                this.timer = setInterval(async () => {
+                    if (this.isMock) {
+                        this.mockPoll();
+                        return;
+                    }
+
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 1000);
+
+                        const res = await fetch(`${this.baseUrl}/event`, {
+                            signal: controller.signal,
+                            method: 'GET'
+                        });
+                        clearTimeout(timeoutId);
+
+                        if (!res.ok) throw new Error("HTTP " + res.status);
+
+                        const text = await res.text();
+                        this.handleResponse(text);
+                        this.setConnected(true);
+                    } catch (e) {
+                        console.log("Poll err:", e);
+                        this.setConnected(false);
+                    }
+                }, CONFIG.pollInterval);
+            },
+
+            // Simulator logic for Mock Mode
+            mockPoll: function () {
+                this.setConnected(true);
+                if (Math.random() < 0.05) {
+                    const events = ['COLLISION', 'STUCK', 'SAW_HUMAN', 'RANDOM', 'NONE', 'NONE', 'NONE'];
+                    // Occasionally verify ID injection too in mock?
+                    // events.push('970'); 
+                    const evt = events[Math.floor(Math.random() * events.length)];
+                    if (evt !== 'NONE') {
+                        this.handleResponse(evt);
+                    }
+                }
+            },
+
+            handleResponse: function (data) {
+                let eventName = "NONE";
+                // Try JSON
+                try {
+                    const obj = JSON.parse(data);
+                    if (obj.event) eventName = obj.event;
+                    else if (obj.id) eventName = obj.id; // Support JSON {id: 123}
+                } catch (e) {
+                    eventName = data.trim();
+                }
+
+                if (!eventName || eventName === "NONE") return;
+
+                document.getElementById('last-event').textContent = eventName;
+
+                const audioData = this.engine.processEvent(eventName);
+                if (audioData) {
+                    this.speak(audioData);
+                } else if (eventName !== "NONE") {
+                    // If it was a signal but no audio found, maybe just log?
+                    console.log("Signal received but no audio mapped:", eventName);
+                }
+            },
+
+            manualEvent: function (evt) {
+                console.log("Manual:", evt);
+                this.handleResponse(evt);
+            },
+
+            speak: function (audioData) {
+                const { text, file } = audioData;
+
+                document.getElementById('last-spoken').textContent = `"${text}"`;
+
+                // Stop any current audio
+                this.stopAudio();
+
+                // Play Audio File
+                if (file) {
+                    console.log("Playing:", file);
+                    this.currentAudio = new Audio(file);
+                    this.currentAudio.play().catch(e => {
+                        console.error("Audio play failed:", e);
+                        // Fallback?
+                        // this.speakTTS(text); 
+                    });
+                } else {
+                    // Fallback to TTS if somehow file is missing in map but text exists? 
+                    // (Should not happen with current generator)
+                    this.speakTTS(text);
+                }
+            },
+
+            speakTTS: function (text) {
+                const u = new SpeechSynthesisUtterance(text);
+                window.speechSynthesis.speak(u);
+            },
+
+            stopAudio: function () {
+                if (this.currentAudio) {
+                    this.currentAudio.pause();
+                    this.currentAudio = null;
+                }
+                window.speechSynthesis.cancel();
+            },
+
+            setConnected: function (isConnected) {
+                const el = document.getElementById('connection-status');
+                if (isConnected) {
+                    el.textContent = "CONNECTED";
+                    el.style.color = "var(--success-color)";
+                } else {
+                    el.textContent = "DISCONNECTED";
+                    el.style.color = "var(--error-color)";
+                }
+            }
+        };
+
+        // Boot
+        app.init();
+
+    </script>
+</body>
+
+</html>
