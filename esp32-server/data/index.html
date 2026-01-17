@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sheldon Remote</title>
+    <style>
+        /* LCARS COLORS */
+        :root {
+            --bg: #000;
+            --orange: #ff9900;
+            --purple: #cc99cc;
+            --blue: #9999cc;
+            --red: #cc6666;
+            --text: #000;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--orange);
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+            text-transform: uppercase;
+        }
+
+        /* KEYFRAME ANNIMATION */
+        @keyframes boot {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        body {
+            animation: boot 1s ease-out;
+        }
+
+        /* LEFT SIDEBAR (The LCARS Elbow) */
+        .sidebar {
+            width: 100px;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            margin-right: 10px;
+        }
+
+        .elbow-top {
+            height: 120px;
+            background: var(--orange);
+            border-bottom-right-radius: 60px;
+            margin-bottom: 5px;
+            padding: 10px;
+            color: black;
+            font-weight: bold;
+            text-align: right;
+            font-size: 1.2rem;
+        }
+
+        .elbow-stripe {
+            flex-grow: 1;
+            background: var(--purple);
+            width: 80px;
+            margin-bottom: 5px;
+        }
+
+        .elbow-bottom {
+            height: 80px;
+            width: 80px;
+            background: var(--blue);
+            border-top-right-radius: 40px;
+            margin-bottom: 20px;
+        }
+
+        .num {
+            font-size: 0.6rem;
+            text-align: right;
+            display: block;
+            margin-top: 5px;
+        }
+
+        /* MAIN CONTENT */
+        .main {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding-top: 10px;
+            padding-right: 10px;
+        }
+
+        /* TOP BAR */
+        .header-bar {
+            display: flex;
+            border-top: 5px solid var(--orange);
+            border-bottom: 5px solid var(--orange);
+            height: 50px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .status-text {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--orange);
+            padding-left: 20px;
+        }
+
+        /* MODE BUTTONS */
+        .mode-switch {
+            display: flex;
+            gap: 5px;
+        }
+
+        .lcars-btn {
+            background: var(--blue);
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1rem;
+            text-align: right;
+            min-width: 100px;
+        }
+
+        .lcars-btn.active {
+            background: var(--orange);
+            color: black;
+        }
+
+        .lcars-btn:active {
+            background: white;
+        }
+
+        /* AUDIO GRID */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .audio-btn {
+            background: var(--purple);
+            color: black;
+            border: none;
+            padding: 20px;
+            border-radius: 30px;
+            /* LCARS pill shape */
+            font-weight: bold;
+            font-size: 0.9rem;
+            text-align: right;
+        }
+
+        .audio-btn.red {
+            background: var(--red);
+        }
+
+        .audio-btn:active {
+            background: white;
+        }
+
+        /* JOYSTICK AREA */
+        .joystick-container {
+            flex-grow: 1;
+            border: 2px solid var(--orange);
+            border-radius: 20px;
+            background: rgba(255, 153, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        /* Custom Joystick Style */
+        #base {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            border: 2px dashed var(--orange);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        #stick {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background: var(--orange);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px var(--orange);
+            pointer-events: none;
+        }
+
+        /* STOP BUTTON */
+        .stop-btn {
+            background: red;
+            color: white;
+            font-weight: bold;
+            border: none;
+            padding: 15px;
+            font-size: 1.2rem;
+            border-radius: 0 0 20px 20px;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- LCARS SIDEBAR -->
+    <div class="sidebar">
+        <div class="elbow-top">
+            SHELDON<br>ROVER<span class="num">NCC-1701</span>
+        </div>
+        <div class="elbow-stripe"></div>
+        <div class="elbow-stripe" style="background:var(--blue); flex-grow:0.5"></div>
+        <div class="elbow-bottom"></div>
+    </div>
+
+    <!-- MAIN INTERFACE -->
+    <div class="main">
+
+        <!-- HEADER / STATUS -->
+        <div class="header-bar">
+            <div class="status-text" id="status">OFFLINE</div>
+            <div class="mode-switch">
+                <button class="lcars-btn active" id="btn-man" onclick="setMode('MANUAL')">MANUAL</button>
+                <button class="lcars-btn" id="btn-auto" onclick="setMode('AUTO')">AUTO</button>
+            </div>
+        </div>
+
+        <!-- AUDIO COMMANDS -->
+        <div class="grid">
+            <button class="audio-btn red" onclick="ev('COLLISION')">COLLISION</button>
+            <button class="audio-btn" onclick="ev('RANDOM')">BAZINGA</button>
+            <button class="audio-btn" onclick="ev('STUCK')">STUCK</button>
+            <button class="audio-btn" onclick="ev('SAW_HUMAN')">HUMAN</button>
+        </div>
+
+        <!-- JOYSTICK -->
+        <div class="joystick-container" id="zone">
+            <div id="base"></div>
+            <div id="stick"></div>
+        </div>
+
+        <button class="stop-btn" onclick="stop()">EMERGENCY STOP</button>
+    </div>
+
+    <script>
+        const B = 'http://192.168.4.1';
+        let mode = 'MANUAL';
+        let joy = { x: 0, y: 0, active: false };
+        let lastSent = 0;
+
+        // --- Networking ---
+        function send(endpoint, data) {
+            fetch(B + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(e => console.log('Err:', e));
+        }
+
+        function ev(e) { send('/event', { event: e }); }
+        function stop() { send('/stop', {}); setMode('MANUAL'); }
+
+        function setMode(m) {
+            mode = m;
+            document.getElementById('btn-man').className = m === 'MANUAL' ? 'lcars-btn active' : 'lcars-btn';
+            document.getElementById('btn-auto').className = m === 'AUTO' ? 'lcars-btn active' : 'lcars-btn';
+            send('/mode', { mode: m });
+        }
+
+        // --- Status Check ---
+        setInterval(() => {
+            fetch(B + '/status').then(r => r.json()).then(d => {
+                document.getElementById('status').innerText = 'ONLINE: ' + d.mode;
+                document.getElementById('status').style.color = '#4f4';
+                if (d.mode !== mode) setMode(d.mode);
+            }).catch(() => {
+                document.getElementById('status').innerText = 'OFFLINE';
+                document.getElementById('status').style.color = 'red';
+            });
+        }, 2000);
+
+        // --- Joystick Logic (Same as before, just restyled) ---
+        const zone = document.getElementById('zone');
+        const stick = document.getElementById('stick');
+
+        function moveStick(cx, cy) {
+            const rect = zone.getBoundingClientRect();
+            const center = { x: rect.width / 2, y: rect.height / 2 };
+
+            let dx = cx - center.x;
+            let dy = cy - center.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const maxDist = 60; // Slightly larger for tablet feels
+
+            if (dist > maxDist) {
+                dx = (dx / dist) * maxDist;
+                dy = (dy / dist) * maxDist;
+            }
+
+            stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+            const nx = Math.round((dx / maxDist) * 100);
+            const ny = Math.round((dy / maxDist) * -100);
+
+            if (joy.x !== nx || joy.y !== ny) {
+                joy.x = nx;
+                joy.y = ny;
+                if (Date.now() - lastSent > 100) {
+                    send('/move', { x: joy.x, y: joy.y });
+                    lastSent = Date.now();
+                }
+            }
+        }
+
+        zone.addEventListener('touchstart', e => {
+            e.preventDefault();
+            joy.active = true;
+            if (mode !== 'MANUAL') setMode('MANUAL');
+        });
+
+        zone.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!joy.active) return;
+            const touch = e.touches[0];
+            const rect = zone.getBoundingClientRect();
+            moveStick(touch.clientX - rect.left, touch.clientY - rect.top);
+        });
+
+        zone.addEventListener('touchend', e => {
+            e.preventDefault();
+            joy.active = false;
+            stick.style.transform = `translate(-50%, -50%)`;
+            send('/move', { x: 0, y: 0 });
+        });
+
+        // Initial center stick
+        stick.style.top = '50%';
+        stick.style.left = '50%';
+    </script>
+</body>
+
+</html>

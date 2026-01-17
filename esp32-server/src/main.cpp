@@ -1,33 +1,35 @@
-// ESP32 Sheldon Rover - Wi-Fi Server + Robot Control
-// Hosts a Wi-Fi AP with HTTP endpoints for remote control
+// ESP32 Sheldon Rover - Autonomous + Joystick
+// Hosts a Wi-Fi AP with HTTP endpoints + LittleFS
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include <LittleFS.h>
 
 // =============================================================
 // CONFIGURATION
 // =============================================================
 
-// Wi-Fi Access Point settings
 const char* AP_SSID = "SheldonRover";
-const char* AP_PASSWORD = "bazinga123";  // At least 8 characters
+const char* AP_PASSWORD = "bazinga123";
 
-// Motor Pins (L298N Driver) - ESP32-S3 compatible
+// Motor Pins (L298N)
 #define PIN_MOTOR_LEFT_FWD   5
 #define PIN_MOTOR_LEFT_BCK   6
 #define PIN_MOTOR_RIGHT_FWD  7
 #define PIN_MOTOR_RIGHT_BCK  15
 
-// Sensor Pins - ESP32-S3 compatible
+// Sensors
 #define PIN_ULTRASONIC_TRIG  16
 #define PIN_ULTRASONIC_ECHO  17
 #define PIN_BUMP_LEFT        18
 #define PIN_BUMP_RIGHT       8
 
-// Thresholds
-#define COLLISION_DIST_CM    15
-#define IDLE_TIMEOUT_MS      10000
+// Constants
+#define OBSTACLE_DIST_CM     25
+#define REVERSE_TIME_MS      800
+#define TURN_TIME_MS         600
+#define RANDOM_EVENT_MS      20000
 
 // =============================================================
 // GLOBAL STATE
@@ -35,332 +37,74 @@ const char* AP_PASSWORD = "bazinga123";  // At least 8 characters
 
 WebServer server(80);
 
-String lastEvent = "";
-String currentMode = "MID";
-bool motorsStopped = true;
-unsigned long lastActivityTime = 0;
+String currentMode = "MANUAL"; // MANUAL or AUTO
+String lastEvent = "";         // Event for iPhone 2 (Face)
 
-// Function prototypes
-void stopMotors();
-void moveMotors(int x, int y);
-void setupMotors();
-void setupSensors();
-float readUltrasonic();
-bool checkCollision();
-void handleRoot();
-void handleVoice();
+unsigned long lastAutoMove = 0;
+unsigned long lastRandomEvent = 0;
+int autoState = 0; // 0=Forward, 1=Back, 2=Turn
 
 // =============================================================
-// EMBEDDED WEB PAGE (served directly, no internet needed)
+// UTIL
 // =============================================================
-
-const char REMOTE_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Sheldon Remote</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none}
-body{font-family:-apple-system,sans-serif;background:#1a1a2e;color:#fff;padding:15px;min-height:100vh}
-h1{text-align:center;font-size:1.3rem;color:#00d4ff;margin-bottom:15px}
-.status{background:rgba(255,255,255,.1);padding:10px;border-radius:10px;margin-bottom:15px;text-align:center}
-.dot{width:10px;height:10px;border-radius:50%;background:#ff4444;display:inline-block;margin-right:8px}
-.dot.ok{background:#44ff44}
-.stop{width:100%;padding:18px;font-size:1.3rem;font-weight:bold;background:linear-gradient(145deg,#ff4444,#cc0000);border:none;border-radius:12px;color:#fff;margin-bottom:15px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px}
-.btn{padding:15px 8px;border:none;border-radius:10px;font-size:.75rem;font-weight:bold;color:#fff;text-transform:uppercase}
-.btn:active{transform:scale(.95)}
-.c1{background:linear-gradient(145deg,#ff6b6b,#ee5a5a)}
-.c2{background:linear-gradient(145deg,#ffa500,#e69500)}
-.c3{background:linear-gradient(145deg,#4ecdc4,#44b3ab)}
-.c4{background:linear-gradient(145deg,#a855f7,#9333ea)}
-.c5{background:linear-gradient(145deg,#22c55e,#16a34a)}
-.c6{background:linear-gradient(145deg,#ec4899,#db2777)}
-#log{background:#111;padding:10px;border-radius:8px;font-family:monospace;font-size:.8rem;max-height:100px;overflow-y:auto;color:#888}
-</style>
-</head>
-<body>
-<h1>🤖 Sheldon Remote</h1>
-<div class="status"><span class="dot" id="dot"></span><span id="st">Checking...</span></div>
-<button class="stop" onclick="stop()">⛔ EMERGENCY STOP</button>
-<div class="grid">
-<button class="btn c1" onclick="ev('COLLISION')">💥 Collision</button>
-<button class="btn c2" onclick="ev('STUCK')">🚧 Stuck</button>
-<button class="btn c3" onclick="ev('RESET')">🔄 Reset</button>
-<button class="btn c4" onclick="ev('BOOT')">🚀 Boot</button>
-<button class="btn c5" onclick="ev('SAW_HUMAN')">👀 Human</button>
-<button class="btn c6" onclick="ev('RANDOM')">🎲 Random</button>
-</div>
-<div id="log">Ready</div>
-<script>
-const B='http://192.168.4.1';
-function log(m){document.getElementById('log').innerHTML=m+'<br>'+document.getElementById('log').innerHTML}
-function ev(e){log('📤 '+e);fetch(B+'/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:e})}).then(r=>r.json()).then(d=>log('✅ Sent')).catch(x=>log('❌ Error'))}
-function stop(){log('🛑 STOP');fetch(B+'/stop',{method:'POST'}).then(r=>log('Stopped')).catch(x=>log('❌ Error'))}
-function ck(){fetch(B+'/status').then(r=>r.json()).then(d=>{document.getElementById('dot').className='dot ok';document.getElementById('st').textContent='Connected'}).catch(x=>{document.getElementById('dot').className='dot';document.getElementById('st').textContent='Disconnected'})}
-setInterval(ck,2000);ck();
-
-// New: Load Audio Map for specific playback
-/* 
-Note: Simple remote implementation doesn't have the audio dropdown UI in the C++ embedded string yet.
-If we want to re-add it, we need to update REMOTE_HTML structure first. 
-For now, let's keep the existing buttons working as they send EVENTS which trigger the Character audio.
-*/
-</script>
-</body>
-</html>
-)rawliteral";
-
-// Character Voice Page (for iPhone mounted on robot)
-const char VOICE_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Sheldon Voice</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
-h1{font-size:2rem;color:#4ecdc4;margin-bottom:20px}
-#status{font-size:1rem;color:#888;margin-bottom:30px}
-#status.ok{color:#44ff44}
-#event{font-size:3rem;margin-bottom:20px;min-height:60px}
-#speech{font-size:1.2rem;color:#4ecdc4;font-style:italic;text-align:center;padding:20px;min-height:80px}
-#start{padding:30px 60px;font-size:1.5rem;background:#22c55e;border:none;border-radius:20px;color:#fff;margin-bottom:20px}
-.hidden{display:none}
-</style>
-</head>
-<body>
-<button id="start" onclick="init()">🔊 TAP TO START</button>
-    <div id="main" class="hidden">
-        <h1>🤖 Sheldon Voice</h1>
-        <div id="status">Connecting...</div>
-        <div id="debug" style="font-size:0.8rem;color:#888;height:50px;overflow:auto;border:1px solid #333;margin:10px;width:90%;">Log...</div>
-        <div id="event">--</div>
-        <div id="speech">"Waiting for events..."</div>
-    </div>
-    <script>
-    const LINES={
-    BOOT:["Systems online. I already regret this.","Boot complete. Try not to break anything."],
-    COLLISION:["This is malarkey!","We have made contact with an obstacle. How pedestrian.","That was entirely predictable."],
-    STUCK:["I am overwhelmed!","I appear to be immobilized. This is your fault.","The universe is testing my patience."],
-    RESET:["Resetting. Again. Predictable.","Fine. We shall try this again."],
-    SAW_HUMAN:["You are doomed!","A human. How... unfortunate.","I see you there. Do not touch me."],
-    RANDOM:["Bazinga!","Have you suffered a recent blow to the head?","I am not crazy. My mother had me tested."]
-    };
-    
-    let synth=window.speechSynthesis;
-    let audioMap = {};
-    let globalAudio = new Audio(); // Reusable object for iOS
-    
-    function dbg(m) {
-        console.log(m);
-        let d = document.getElementById('debug');
-        d.innerHTML = m + "<br>" + d.innerHTML;
-    }
-    
-    function init(){
-        document.getElementById('start').classList.add('hidden');
-        document.getElementById('main').classList.remove('hidden');
-        
-        // Unlock Audio Context for iOS
-        // Playing empty or silent audio on user gesture unlocks the element
-        globalAudio.src = ""; 
-        globalAudio.play().catch(e=>{}); 
-        
-        dbg("Fetching map...");
-        fetch('/audio_map.json')
-            .then(r => {
-                if(!r.ok) throw new Error("HTTP " + r.status);
-                return r.json();
-            })
-            .then(d => {
-                audioMap = d;
-                dbg("Map Loaded! Keys: " + Object.keys(d).length);
-                speak("BOOT");
-            })
-            .catch(e => {
-                dbg("Map ERROR: " + e.message);
-                let u=new SpeechSynthesisUtterance("Error loading audio.");
-                synth.speak(u);
-            });
-        
-        poll();
-        setInterval(poll,500);
-    }
-
-function poll(){
-    fetch('http://192.168.4.1/event').then(r=>r.json()).then(d=>{
-        document.getElementById('status').textContent='Connected';
-        document.getElementById('status').className='ok';
-        if(d.event && d.event!==''){
-            let ev=d.event;
-            document.getElementById('event').textContent=ev;
-            speak(ev);
-        }
-    }).catch(e=>{
-        document.getElementById('status').textContent='Disconnected';
-        document.getElementById('status').className='';
-    });
-}
-
-function speak(ev){
-    // Try to play from files first
-    // Event may be just "COLLISION" or "SAY:collision_2_2.mp3"
-    
-    // 1. Check if event maps to a category in audioMap
-    // e.g. ev="COLLISION" -> audioMap["COLLISION"] -> pick random
-    if (audioMap[ev] && audioMap[ev].length > 0) {
-        let files = audioMap[ev];
-        let file = files[Math.floor(Math.random() * files.length)];
-        let path = "/" + ev + "/" + file;
-        playAudio(path, ev);
-        return;
-    }
-    
-    // 2. Check if event is a specific SAY command
-    if (ev.startsWith("SAY:")) {
-        let fileId = ev.split(":")[1]; 
-        // We need to find where this file lives in map
-        for (let cat in audioMap) {
-            if (audioMap[cat].includes(fileId)) {
-                playAudio("/" + cat + "/" + fileId, "Manual Override");
-                return;
-            }
-        }
-    }
-
-    // 3. Fallback to TTS
-    let lines=LINES[ev]||LINES['RANDOM'];
-    let line=lines[Math.floor(Math.random()*lines.length)];
-    document.getElementById('speech').textContent='\"'+line+'\"';
-    synth.cancel();
-    let u=new SpeechSynthesisUtterance(line);
-    u.rate=0.9;u.pitch=1.1;
-    synth.speak(u);
-}
-
-    function playAudio(path) {
-        document.getElementById('speech').textContent = "Playing: " + path;
-        dbg("Trying: " + path);
-        
-        // Reuse global object - CRITICAL for iOS
-        globalAudio.src = path;
-        globalAudio.play()
-            .then(() => dbg("Playing..."))
-            .catch(e => {
-                dbg("Play FAIL: " + e.message);
-                let u=new SpeechSynthesisUtterance("Audio missing.");
-                synth.speak(u);
-            });
-    }
-</script>
-</body>
-</html>
-)rawliteral";
-
-// =============================================================
-// MOTOR CONTROL
-// =============================================================
-
-void setupMotors() {
-    pinMode(PIN_MOTOR_LEFT_FWD, OUTPUT);
-    pinMode(PIN_MOTOR_LEFT_BCK, OUTPUT);
-    pinMode(PIN_MOTOR_RIGHT_FWD, OUTPUT);
-    pinMode(PIN_MOTOR_RIGHT_BCK, OUTPUT);
-    stopMotors();
-}
-
-void stopMotors() {
-    analogWrite(PIN_MOTOR_LEFT_FWD, 0);
-    digitalWrite(PIN_MOTOR_LEFT_BCK, LOW);
-    analogWrite(PIN_MOTOR_RIGHT_FWD, 0);
-    digitalWrite(PIN_MOTOR_RIGHT_BCK, LOW);
-    motorsStopped = true;
-}
 
 void moveMotors(int x, int y) {
     // x: -100 to 100 (left/right)
-    // y: -100 to 100 (backward/forward)
+    // y: -100 to 100 (back/fwd)
     
-    int leftSpeed = constrain(y + x, -100, 100);
-    int rightSpeed = constrain(y - x, -100, 100);
-    
-    // Left motor
-    if (leftSpeed >= 0) {
+    // Limits
+    if(x < -100) x = -100; if(x > 100) x = 100;
+    if(y < -100) y = -100; if(y > 100) y = 100;
+
+    int leftSpeed = y + x;
+    int rightSpeed = y - x;
+
+    leftSpeed = constrain(leftSpeed, -100, 100);
+    rightSpeed = constrain(rightSpeed, -100, 100);
+
+    // Left Motor
+    if (leftSpeed > 0) {
         analogWrite(PIN_MOTOR_LEFT_FWD, map(leftSpeed, 0, 100, 0, 255));
         digitalWrite(PIN_MOTOR_LEFT_BCK, LOW);
     } else {
         analogWrite(PIN_MOTOR_LEFT_FWD, 0);
-        digitalWrite(PIN_MOTOR_LEFT_BCK, HIGH);
+        analogWrite(PIN_MOTOR_LEFT_BCK, map(abs(leftSpeed), 0, 100, 0, 255)); 
+        // Note: For PWM on BCK pin, use analogWrite if supported or just digitalWrite HIGH for simple H-Bridge
+        // L298N supports PWM on controls.
     }
-    
-    // Right motor
-    if (rightSpeed >= 0) {
+
+    // Right Motor
+    if (rightSpeed > 0) {
         analogWrite(PIN_MOTOR_RIGHT_FWD, map(rightSpeed, 0, 100, 0, 255));
         digitalWrite(PIN_MOTOR_RIGHT_BCK, LOW);
     } else {
         analogWrite(PIN_MOTOR_RIGHT_FWD, 0);
-        digitalWrite(PIN_MOTOR_RIGHT_BCK, HIGH);
+        analogWrite(PIN_MOTOR_RIGHT_BCK, map(abs(rightSpeed), 0, 100, 0, 255));
     }
-    
-    motorsStopped = (x == 0 && y == 0);
-    lastActivityTime = millis();
 }
 
-// =============================================================
-// SENSOR READING
-// =============================================================
-
-void setupSensors() {
-    pinMode(PIN_ULTRASONIC_TRIG, OUTPUT);
-    pinMode(PIN_ULTRASONIC_ECHO, INPUT);
-    pinMode(PIN_BUMP_LEFT, INPUT_PULLUP);
-    pinMode(PIN_BUMP_RIGHT, INPUT_PULLUP);
+void stopMotors() {
+    moveMotors(0, 0);
 }
 
-float readUltrasonic() {
+float getDistance() {
     digitalWrite(PIN_ULTRASONIC_TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(PIN_ULTRASONIC_TRIG, HIGH);
     delayMicroseconds(10);
     digitalWrite(PIN_ULTRASONIC_TRIG, LOW);
-    
-    long duration = pulseIn(PIN_ULTRASONIC_ECHO, HIGH, 30000);
-    float distance = duration * 0.034 / 2;
-    
-    return (distance == 0) ? 999 : distance;
+    long duration = pulseIn(PIN_ULTRASONIC_ECHO, HIGH, 30000); // 30ms timeout
+    if (duration == 0) return 100.0; // No echo = far
+    return duration * 0.034 / 2;
 }
 
-bool checkCollision() {
-    // Check bump switches (active LOW with pullup)
-    if (digitalRead(PIN_BUMP_LEFT) == LOW || digitalRead(PIN_BUMP_RIGHT) == LOW) {
-        return true;
-    }
-    
-    // Check ultrasonic
-    float dist = readUltrasonic();
-    if (dist < COLLISION_DIST_CM && dist > 0) {
-        return true;
-    }
-    
-    return false;
+bool checkBump() {
+    return (digitalRead(PIN_BUMP_LEFT) == LOW || digitalRead(PIN_BUMP_RIGHT) == LOW);
 }
 
 // =============================================================
 // HTTP HANDLERS
 // =============================================================
-
-void handleRoot() {
-    server.send(200, "text/html", REMOTE_HTML);
-}
-
-void handleVoice() {
-    server.send(200, "text/html", VOICE_HTML);
-}
 
 void sendCORS() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -368,297 +112,209 @@ void sendCORS() {
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-void handleOptions() {
+void handleStatic(String path, String type) {
+    if(LittleFS.exists(path)) {
+        File file = LittleFS.open(path, "r");
+        server.streamFile(file, type);
+        file.close();
+    } else {
+        server.send(404, "text/plain", "File Missing: " + path);
+    }
+}
+
+void handleRoot() { handleStatic("/index.html", "text/html"); }
+void handleVoice() { handleStatic("/voice.html", "text/html"); }
+void handleAudioMap() { handleStatic("/audio_map.json", "application/json"); }
+
+void handleMode() {
     sendCORS();
-    server.send(204);
+    if (server.hasArg("plain")) {
+        JsonDocument doc;
+        deserializeJson(doc, server.arg("plain"));
+        if(doc["mode"].is<String>()) {
+            currentMode = doc["mode"].as<String>();
+            Serial.println("MODE SET: " + currentMode);
+            // Reset auto state
+            if(currentMode == "AUTO") {
+                autoState = 0; 
+                lastAutoMove = millis();
+            } else {
+                stopMotors();
+            }
+        }
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleMove() {
+    sendCORS();
+    if (server.hasArg("plain")) {
+        JsonDocument doc;
+        deserializeJson(doc, server.arg("plain"));
+        int x = doc["x"];
+        int y = doc["y"];
+        
+        // Joystick Override
+        if (currentMode == "AUTO" && (abs(x) > 10 || abs(y) > 10)) {
+            currentMode = "MANUAL";
+            Serial.println("Joystick Override -> MANUAL");
+        }
+        
+        if (currentMode == "MANUAL") {
+            moveMotors(x, y);
+        }
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleEventPost() {
+    sendCORS();
+    if (server.hasArg("plain")) {
+        JsonDocument doc;
+        deserializeJson(doc, server.arg("plain"));
+        String e = doc["event"];
+        if (e.length() > 0) {
+            lastEvent = e;
+            Serial.println("EVENT: " + lastEvent);
+        }
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleEventGet() {
+    sendCORS();
+    JsonDocument doc;
+    doc["event"] = lastEvent;
+    String out;
+    serializeJson(doc, out);
+    lastEvent = ""; // Consume
+    server.send(200, "application/json", out);
 }
 
 void handleStatus() {
     sendCORS();
-    
     JsonDocument doc;
-    doc["status"] = "online";
     doc["mode"] = currentMode;
-    doc["lastEvent"] = lastEvent;
-    doc["motorsStopped"] = motorsStopped;
-    
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
+    doc["distance"] = getDistance(); // debug
+    String out;
+    serializeJson(doc, out);
+    server.send(200, "application/json", out);
 }
 
-void handleGetEvent() {
-    sendCORS();
-    
-    JsonDocument doc;
-    doc["event"] = lastEvent;
-    
-    String response;
-    serializeJson(doc, response);
-    
-    // Clear event after reading (one-shot)
-    lastEvent = "";
-    
-    server.send(200, "application/json", response);
-}
-
-void handlePostEvent() {
-    sendCORS();
-    
-    if (server.hasArg("plain")) {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, server.arg("plain"));
-        
-        if (!error && doc["event"].is<const char*>()) {
-            lastEvent = doc["event"].as<String>();
-            Serial.println("EVENT: " + lastEvent);
-            
-            server.send(200, "application/json", "{\"ok\":true}");
-            return;
-        }
-    }
-    
-    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
-}
-
-void handlePostMode() {
-    sendCORS();
-    
-    if (server.hasArg("plain")) {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, server.arg("plain"));
-        
-        if (!error && doc["mode"].is<const char*>()) {
-            currentMode = doc["mode"].as<String>();
-            Serial.println("MODE: " + currentMode);
-            
-            server.send(200, "application/json", "{\"ok\":true}");
-            return;
-        }
-    }
-    
-    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
-}
-
-void handlePostStop() {
-    sendCORS();
-    
-    stopMotors();
-    lastEvent = "";
-    Serial.println("EMERGENCY STOP");
-    
-    server.send(200, "application/json", "{\"ok\":true,\"stopped\":true}");
-}
-
-void handlePostSay() {
-    sendCORS();
-    
-    if (server.hasArg("plain")) {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, server.arg("plain"));
-        
-        if (!error && doc["id"].is<const char*>()) {
-            String audioId = doc["id"].as<String>();
-            Serial.println("SAY: " + audioId);
-            
-            // Store as event so iPhone 1 (mouth) can pick it up
-            lastEvent = "SAY:" + audioId;
-            
-            server.send(200, "application/json", "{\"ok\":true}");
-            return;
-        }
-    }
-    
-    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
-}
-
-void handlePostMove() {
-    sendCORS();
-    
-    if (server.hasArg("plain")) {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, server.arg("plain"));
-        
-        if (!error && doc["x"].is<int>() && doc["y"].is<int>()) {
-            int x = doc["x"].as<int>();
-            int y = doc["y"].as<int>();
-            
-            moveMotors(x, y);
-            
-            server.send(200, "application/json", "{\"ok\":true}");
-            return;
-        }
-    }
-    
-    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
-}
-
-void handleNotFound() {
-    sendCORS();
-    server.send(404, "application/json", "{\"error\":\"Not found\"}");
-}
-
-// =============================================================
-// FILE SYSTEM (LittleFS)
-// =============================================================
-#include <LittleFS.h>
-
-void handleStaticFile(String path, String contentType) {
-    if (LittleFS.exists(path)) {
-        File file = LittleFS.open(path, "r");
-        server.streamFile(file, contentType);
-        file.close();
-    } else {
-        server.send(404, "application/json", "{\"error\":\"File not found\"}");
-    }
-}
-
-// Serve audio files dynamically
 void handleAudio() {
     sendCORS();
-    String path = server.uri(); // e.g., /audio/random/foo.mp3
-    
-    // Remove prefix if needed or map directly. 
-    // Our structure in data is flattened or categorized?
-    // Data dir: /CATEGORY/filename.mp3
-    // URI: /CATEGORY/filename.mp3
-    // LittleFS path: /CATEGORY/filename.mp3
-    
-    if (LittleFS.exists(path)) {
-        File file = LittleFS.open(path, "r");
-        server.streamFile(file, "audio/mpeg");
-        file.close();
+    String path = server.uri();
+    if(LittleFS.exists(path)) {
+        File f = LittleFS.open(path, "r");
+        server.streamFile(f, "audio/mpeg");
+        f.close();
     } else {
-        server.send(404, "text/plain", "Audio not found");
+        server.send(404, "text/plain", "Not Found");
     }
-}
-
-void handleAudioMap() {
-    sendCORS();
-    handleStaticFile("/audio_map.json", "application/json");
-}
-
-void handleList() {
-    sendCORS();
-    String output = "[";
-    File root = LittleFS.open("/");
-    File file = root.openNextFile();
-    while(file){
-        if(output != "[") output += ",";
-        output += "\"" + String(file.name()) + "\"";
-        if(file.isDirectory()){
-            File sub = LittleFS.open(file.path());
-            File subfile = sub.openNextFile();
-             while(subfile){
-                output += ",\"" + String(subfile.path()) + "\"";
-                subfile = sub.openNextFile();
-            }
-        }
-        file = root.openNextFile();
-    }
-    output += "]";
-    server.send(200, "application/json", output);
 }
 
 // =============================================================
-// SETUP & LOOP
+// SETUP
 // =============================================================
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n=== Sheldon Rover ESP32 ===");
     
-    // Setup hardware
-    setupMotors();
-    setupSensors();
+    // Pins
+    pinMode(PIN_MOTOR_LEFT_FWD, OUTPUT);
+    pinMode(PIN_MOTOR_LEFT_BCK, OUTPUT);
+    pinMode(PIN_MOTOR_RIGHT_FWD, OUTPUT);
+    pinMode(PIN_MOTOR_RIGHT_BCK, OUTPUT);
     
-    // Initialize File System
+    pinMode(PIN_ULTRASONIC_TRIG, OUTPUT);
+    pinMode(PIN_ULTRASONIC_ECHO, INPUT);
+    pinMode(PIN_BUMP_LEFT, INPUT_PULLUP);
+    pinMode(PIN_BUMP_RIGHT, INPUT_PULLUP);
+
     if(!LittleFS.begin(true)){
-        Serial.println("LittleFS Mount Failed");
+        Serial.println("LITTLEFS FAIL");
         return;
     }
-    Serial.println("LittleFS Mounted");
 
-    // Start Wi-Fi AP
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
-    
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP);
-    Serial.print("SSID: ");
-    Serial.println(AP_SSID);
-    Serial.print("Password: ");
-    Serial.println(AP_PASSWORD);
-    
-    // Setup HTTP routes
-    server.on("/", HTTP_GET, handleRoot);  // Serve remote control page
-    server.on("/voice", HTTP_GET, handleVoice);  // Serve voice/speaker page
-    server.on("/audio_map.json", HTTP_GET, handleAudioMap); // Audio manifest
-    
+    Serial.println(WiFi.softAPIP());
+
+    // Routes
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/voice", HTTP_GET, handleVoice);
+    server.on("/audio_map.json", HTTP_GET, handleAudioMap);
+    server.on("/move", HTTP_POST, handleMove);
+    server.on("/mode", HTTP_POST, handleMode);
+    server.on("/event", HTTP_POST, handleEventPost);
+    server.on("/event", HTTP_GET, handleEventGet);
     server.on("/status", HTTP_GET, handleStatus);
-    server.on("/status", HTTP_OPTIONS, handleOptions);
     
-    server.on("/event", HTTP_GET, handleGetEvent);
-    server.on("/event", HTTP_POST, handlePostEvent);
-    server.on("/event", HTTP_OPTIONS, handleOptions);
+    // Options
+    server.on("/move", HTTP_OPTIONS, [](){ sendCORS(); server.send(204); });
+    server.on("/mode", HTTP_OPTIONS, [](){ sendCORS(); server.send(204); });
+    server.on("/event", HTTP_OPTIONS, [](){ sendCORS(); server.send(204); });
     
-    server.on("/mode", HTTP_POST, handlePostMode);
-    server.on("/mode", HTTP_OPTIONS, handleOptions);
-    
-    server.on("/stop", HTTP_POST, handlePostStop);
-    server.on("/stop", HTTP_OPTIONS, handleOptions);
-    
-    server.on("/say", HTTP_POST, handlePostSay);
-    server.on("/say", HTTP_OPTIONS, handleOptions);
-    
-    server.on("/move", HTTP_POST, handlePostMove);
-    server.on("/move", HTTP_OPTIONS, handleOptions);
-    
-    // Wildcard handler for audio files (must be last-ish)
+    // Audio wildcard
     server.onNotFound([](){
-        if(server.uri().endsWith(".mp3")) {
-            handleAudio();
-        } else {
-            handleNotFound();
-        }
+        if(server.uri().endsWith(".mp3")) handleAudio();
+        else server.send(404);
     });
-    
+
     server.begin();
-    Serial.println("HTTP server started!");
-    Serial.println("Connect to WiFi: " + String(AP_SSID));
-    Serial.println("Then open: http://" + IP.toString());
-    
-    // Send BOOT event
     lastEvent = "BOOT";
-    lastActivityTime = millis();
 }
 
+// =============================================================
+// MAIN LOOP - THE BRAIN
+// =============================================================
+
 void loop() {
-    // Handle HTTP requests
     server.handleClient();
-    
-    // Check for autonomous events (collision, stuck, idle)
-    static unsigned long lastSensorCheck = 0;
-    if (millis() - lastSensorCheck > 100) {  // Check every 100ms
-        lastSensorCheck = millis();
-        
-        // Only check sensors if motors are running
-        if (!motorsStopped) {
-            if (checkCollision()) {
+
+    // Autonomous Logic
+    if (currentMode == "AUTO") {
+        unsigned long now = millis();
+        float dist = getDistance();
+        bool bump = checkBump();
+
+        // 1. Safety / Collision
+        if (autoState == 0) { // Driving Forward state
+            if (bump || (dist < OBSTACLE_DIST_CM && dist > 1.0)) {
+                // COLLISION DETECTED
                 stopMotors();
-                lastEvent = "COLLISION";
-                Serial.println("AUTO: COLLISION");
+                autoState = 1; // Go to Back state
+                lastAutoMove = now;
+                lastEvent = (bump) ? "COLLISION" : "STUCK"; // Or SAW_HUMAN if distance
+                if(dist < 10) lastEvent = "SAW_HUMAN"; // Close proxy
+                Serial.println("Obstacle! " + lastEvent);
+            } else {
+                moveMotors(0, 40); // Drive Forward slow
+            }
+        } 
+        else if (autoState == 1) { // Reversing
+            moveMotors(0, -45);
+            if (now - lastAutoMove > REVERSE_TIME_MS) {
+                autoState = 2; // Turn
+                lastAutoMove = now;
             }
         }
-        
-        // Check for idle timeout
-        if (millis() - lastActivityTime > IDLE_TIMEOUT_MS && lastEvent.isEmpty()) {
-            lastEvent = "IDLE_TOO_LONG";
-            Serial.println("AUTO: IDLE_TOO_LONG");
-            lastActivityTime = millis();  // Reset to avoid spam
+        else if (autoState == 2) { // Turning
+            moveMotors(60, 0); // Spin right
+            if (now - lastAutoMove > TURN_TIME_MS) {
+                autoState = 0; // Back to Forward
+                lastAutoMove = now;
+            }
+        }
+
+        // 2. Random Commentary
+        if (now - lastRandomEvent > RANDOM_EVENT_MS) {
+            if (random(0, 100) < 30) { // 30% chance every 20s
+                 lastEvent = "RANDOM";
+            }
+            lastRandomEvent = now;
         }
     }
     
-    delay(1);
+    delay(5);
 }

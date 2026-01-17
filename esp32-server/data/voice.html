@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+    <title>Sheldon Voice</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            font-family: -apple-system, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #4ecdc4;
+            margin-bottom: 20px
+        }
+
+        #status {
+            font-size: 1rem;
+            color: #888;
+            margin-bottom: 30px
+        }
+
+        #status.ok {
+            color: #44ff44
+        }
+
+        #event {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            min-height: 60px
+        }
+
+        #speech {
+            font-size: 1.2rem;
+            color: #4ecdc4;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+            min-height: 80px
+        }
+
+        #start {
+            padding: 30px 60px;
+            font-size: 1.5rem;
+            background: #22c55e;
+            border: none;
+            border-radius: 20px;
+            color: #fff;
+            margin-bottom: 20px
+        }
+
+        .hidden {
+            display: none
+        }
+    </style>
+</head>
+
+<body>
+    <button id="start" onclick="init()">🔊 TAP TO START</button>
+    <div id="main" class="hidden">
+        <h1>🤖 Sheldon Voice</h1>
+        <div id="status">Connecting...</div>
+        <div id="debug"
+            style="font-size:0.8rem;color:#888;height:50px;overflow:auto;border:1px solid #333;margin:10px;width:90%;">
+            Log...</div>
+        <div id="event">--</div>
+        <div id="speech">"Waiting for events..."</div>
+    </div>
+    <script>
+        const LINES = {
+            BOOT: ["Systems online. I already regret this.", "Boot complete. Try not to break anything."],
+            COLLISION: ["This is malarkey!", "We have made contact with an obstacle. How pedestrian.", "That was entirely predictable."],
+            STUCK: ["I am overwhelmed!", "I appear to be immobilized. This is your fault.", "The universe is testing my patience."],
+            RESET: ["Resetting. Again. Predictable.", "Fine. We shall try this again."],
+            SAW_HUMAN: ["You are doomed!", "A human. How... unfortunate.", "I see you there. Do not touch me."],
+            RANDOM: ["Bazinga!", "Have you suffered a recent blow to the head?", "I am not crazy. My mother had me tested."]
+        };
+
+        let synth = window.speechSynthesis;
+        let audioMap = {};
+        let globalAudio = new Audio(); // Reusable object for iOS
+
+        function dbg(m) {
+            console.log(m);
+            let d = document.getElementById('debug');
+            d.innerHTML = m + "<br>" + d.innerHTML;
+        }
+
+        function init() {
+            document.getElementById('start').classList.add('hidden');
+            document.getElementById('main').classList.remove('hidden');
+
+            // Unlock Audio Context for iOS
+            // Playing empty or silent audio on user gesture unlocks the element
+            globalAudio.src = "";
+            globalAudio.play().catch(e => { });
+
+            dbg("Fetching map...");
+            fetch('/audio_map.json')
+                .then(r => {
+                    if (!r.ok) throw new Error("HTTP " + r.status);
+                    return r.json();
+                })
+                .then(d => {
+                    audioMap = d;
+                    dbg("Map Loaded! Keys: " + Object.keys(d).length);
+                    speak("BOOT");
+                })
+                .catch(e => {
+                    dbg("Map ERROR: " + e.message);
+                    let u = new SpeechSynthesisUtterance("Error loading audio.");
+                    synth.speak(u);
+                });
+
+            poll();
+            setInterval(poll, 500);
+        }
+
+        function poll() {
+            fetch('http://192.168.4.1/event').then(r => r.json()).then(d => {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'ok';
+                if (d.event && d.event !== '') {
+                    let ev = d.event;
+                    document.getElementById('event').textContent = ev;
+                    speak(ev);
+                }
+            }).catch(e => {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = '';
+            });
+        }
+
+        let lastPlayed = {}; // Tracks last file per category
+
+        function speak(ev) {
+            // 1. Check maps
+            if (audioMap[ev] && audioMap[ev].length > 0) {
+                let files = audioMap[ev];
+                let file;
+
+                // If only 1 file exists, play it.
+                if (files.length === 1) {
+                    file = files[0];
+                } else {
+                    // Try to pick a file different from last time
+                    let attempts = 0;
+                    do {
+                        file = files[Math.floor(Math.random() * files.length)];
+                        attempts++;
+                    } while (file === lastPlayed[ev] && attempts < 5);
+                }
+
+                lastPlayed[ev] = file; // Remember for next time
+                let path = "/" + ev + "/" + file;
+                playAudio(path);
+                return;
+            }
+
+            if (ev.startsWith("SAY:")) {
+                let fileId = ev.split(":")[1];
+                for (let cat in audioMap) {
+                    if (audioMap[cat].includes(fileId)) {
+                        playAudio("/" + cat + "/" + fileId);
+                        return;
+                    }
+                }
+            }
+
+            // 3. Fallback to TTS (with same no-repeat logic)
+            let lines = LINES[ev] || LINES['RANDOM'];
+            let line;
+            if (lines.length === 1) {
+                line = lines[0];
+            } else {
+                let attempts = 0;
+                do {
+                    line = lines[Math.floor(Math.random() * lines.length)];
+                    attempts++;
+                } while (line === lastPlayed[ev + "_TTS"] && attempts < 5);
+            }
+            lastPlayed[ev + "_TTS"] = line;
+
+            document.getElementById('speech').textContent = '\"' + line + '\"';
+            synth.cancel();
+            let u = new SpeechSynthesisUtterance(line);
+            u.rate = 0.9; u.pitch = 1.1;
+            synth.speak(u);
+        }
+
+        function playAudio(path) {
+            document.getElementById('speech').textContent = "Playing: " + path;
+            dbg("Trying: " + path);
+
+            // Reuse global object - CRITICAL for iOS
+            globalAudio.src = path;
+            globalAudio.play()
+                .then(() => dbg("Playing..."))
+                .catch(e => {
+                    dbg("Play FAIL: " + e.message);
+                    let u = new SpeechSynthesisUtterance("Audio missing.");
+                    synth.speak(u);
+                });
+        }
+    </script>
+</body>
+
+</html>
