@@ -1,22 +1,65 @@
 # audio_player.py - Audio Playback for Sheldon Rover
-# Supports multiple audio backends: DFPlayer Mini, I2S DAC, or simple print (debug)
+# Now uses cached clips with TTS fallback
 
 from config import DEBUG
+from audio_cache import AudioCache
 
-# =============================================================================
-# Audio Backend Base Class
-# =============================================================================
 
 class AudioPlayer:
-    """Base audio player - just prints (for testing without hardware)."""
+    """
+    Audio player that uses pre-generated clips when available,
+    falls back to TTS when not.
+    """
     
     def __init__(self):
+        """Initialize audio player with clip cache."""
+        self.cache = AudioCache()
+        
         if DEBUG:
-            print("[AUDIO] Initialized in DEBUG/print mode")
+            clips = self.cache.list_clips()
+            if clips:
+                print(f"[AUDIO] Loaded {len(clips)} cached clips")
+            else:
+                print("[AUDIO] No cached clips found, using TTS fallback")
     
-    def speak(self, text: str):
-        """Speak the given text."""
+    def speak(self, text: str, event: str = None, tier: int = 0):
+        """
+        Speak the given text.
+        
+        If event/tier is provided and a cached clip exists, play it.
+        Otherwise, fall back to TTS.
+        
+        Args:
+            text: The text to speak (used for TTS fallback)
+            event: Optional event name for clip lookup
+            tier: Optional tier for clip lookup
+        """
+        # Try to play cached clip
+        if event and self.cache.has_clip(event, tier):
+            self.cache.play(event, tier, text_fallback=text)
+        else:
+            # No cached clip, use TTS
+            self._speak_tts(text)
+    
+    def _speak_tts(self, text: str):
+        """Speak using system TTS."""
         print(f"🔊 {text}")
+        
+        try:
+            # Try MicroPython first
+            from machine import Pin
+            # On ESP32, would use external TTS or skip
+            pass
+        except ImportError:
+            # Desktop: use system TTS
+            import subprocess
+            import shutil
+            
+            if shutil.which("say"):
+                try:
+                    subprocess.run(['say', text], check=True)
+                except subprocess.CalledProcessError:
+                    pass  # TTS failed, already printed
     
     def stop(self):
         """Stop current playback."""
@@ -24,82 +67,17 @@ class AudioPlayer:
 
 
 # =============================================================================
-# DFPlayer Mini Backend (Recommended for loud, clear audio)
+# Factory Function (for backwards compatibility)
 # =============================================================================
 
-class DFPlayerAudio(AudioPlayer):
+def create_audio_player(backend: str = "auto") -> AudioPlayer:
     """
-    Audio player using DFPlayer Mini module.
-    
-    Requires:
-        - DFPlayer Mini connected via UART
-        - MP3 files on SD card named: 0001.mp3, 0002.mp3, etc.
-        - A mapping from text hash to file number
-    """
-    
-    def __init__(self, tx_pin: int, rx_pin: int):
-        from machine import UART, Pin
-        
-        self.uart = UART(1, baudrate=9600, tx=Pin(tx_pin), rx=Pin(rx_pin))
-        self.volume = 25  # 0-30
-        
-        # Initialize DFPlayer
-        self._send_command(0x06, self.volume)  # Set volume
-        
-        if DEBUG:
-            print(f"[DFPLAYER] Initialized on TX={tx_pin}, RX={rx_pin}")
-    
-    def _send_command(self, cmd: int, param: int = 0):
-        """Send command to DFPlayer Mini."""
-        # DFPlayer command format: 7E FF 06 CMD 00 PARAM_H PARAM_L EF
-        buf = bytearray([
-            0x7E, 0xFF, 0x06, cmd, 0x00,
-            (param >> 8) & 0xFF,
-            param & 0xFF,
-            0xEF
-        ])
-        self.uart.write(buf)
-    
-    def speak(self, text: str):
-        """Play audio file corresponding to text."""
-        # Simple hash to file number mapping
-        # In production, use a proper lookup table
-        file_num = (hash(text) % 100) + 1
-        
-        print(f"🔊 {text}")
-        self._send_command(0x03, file_num)  # Play file
-        
-        if DEBUG:
-            print(f"[DFPLAYER] Playing file {file_num:04d}.mp3")
-    
-    def stop(self):
-        """Stop playback."""
-        self._send_command(0x16)
-
-
-# =============================================================================
-# Factory Function
-# =============================================================================
-
-def create_audio_player(backend: str = "print") -> AudioPlayer:
-    """
-    Create an audio player with the specified backend.
+    Create an audio player.
     
     Args:
-        backend: "print" (debug), "dfplayer", or "i2s"
+        backend: "auto" (recommended), "cache", or "tts"
         
     Returns:
         AudioPlayer instance
     """
-    if backend == "print":
-        return AudioPlayer()
-    
-    elif backend == "dfplayer":
-        from config import DFPLAYER_TX_PIN, DFPLAYER_RX_PIN
-        return DFPlayerAudio(DFPLAYER_TX_PIN, DFPLAYER_RX_PIN)
-    
-    # Add more backends as needed (I2S, PWM, etc.)
-    
-    else:
-        print(f"[AUDIO] Unknown backend '{backend}', falling back to print")
-        return AudioPlayer()
+    return AudioPlayer()

@@ -35,7 +35,7 @@ def main():
     # Boot announcement
     boot_line = engine.on_event("BOOT")
     if boot_line:
-        audio.speak(boot_line)
+        audio.speak(boot_line, event="BOOT", tier=engine.intensity)
     
     # Main loop
     while True:
@@ -47,14 +47,14 @@ def main():
                 # Optionally announce mode switch
                 mode_line = engine.on_event("MODE_SWITCH")
                 if mode_line:
-                    audio.speak(mode_line)
+                    audio.speak(mode_line, event="MODE_SWITCH", tier=engine.intensity)
             
             # 2. Check for events from Galileo
             event = serial.read_event()
             if event:
                 line = engine.on_event(event)
                 if line:
-                    audio.speak(line)
+                    audio.speak(line, event=event, tier=engine.intensity)
             
             # 3. Small delay to prevent busy-waiting
             time.sleep_ms(LOOP_DELAY_MS)
