@@ -3,13 +3,22 @@
 
 #include <Arduino.h>
 
-// --- Serial Configuration ---
 #define SERIAL_BAUD_RATE 9600
-// Intel Galileo usually uses Serial1 for the UART header (Pins 0/1)
-// Adjust if using software serial or USB-serial
-#define ESP_SERIAL Serial1 
 
-// --- Motor Pins (Example L298N or similar) ---
+// --- Serial Configuration ---
+// If using Arduino UNO (ATmega328P), we use SoftwareSerial for the ESP32
+// so we can keep the main "Serial" free for USB debugging.
+#if defined(__AVR_ATmega328P__) || defined(ARDUINO_AVR_UNO)
+    #include <SoftwareSerial.h>
+    #define USE_SOFTWARE_SERIAL
+    #define PIN_RX_FROM_ESP  2  // Connect to ESP32 TX
+    #define PIN_TX_TO_ESP    3  // Connect to ESP32 RX
+#else
+    // For Mega/Leonardo/Galileo (Boards with HW Serial1)
+    #define ESP_SERIAL Serial1 
+#endif
+
+// --- Motor Pins (L298N Standard) ---
 #define PIN_MOTOR_LEFT_FWD   5
 #define PIN_MOTOR_LEFT_BCK   6
 #define PIN_MOTOR_RIGHT_FWD  9
