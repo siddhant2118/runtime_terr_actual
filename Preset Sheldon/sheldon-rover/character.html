@@ -294,9 +294,14 @@
             baseUrl: CONFIG.defaultUrl,
             isMock: false,
             currentAudio: null,
+            audioCache: {},  // Preloaded audio objects
+            preloadComplete: false,
 
             init: function () {
                 this.engine = new CharacterEngine(this);
+
+                // Preload all audio files
+                this.preloadAudio();
 
                 // UI Bindings
                 document.getElementById('start-btn').addEventListener('click', () => {
@@ -313,6 +318,56 @@
                     this.isMock = e.target.checked;
                     document.getElementById('backend-indicator').textContent = this.isMock ? "MOCK" : "ESP32";
                     document.getElementById('backend-indicator').style.borderColor = this.isMock ? "#007aff" : "#444";
+                });
+            },
+
+            preloadAudio: function () {
+                const startBtn = document.getElementById('start-btn');
+                const statusP = document.querySelector('#start-overlay p');
+                startBtn.textContent = "Loading Audio...";
+                startBtn.disabled = true;
+
+                const files = Object.values(window.AUDIO_ID_MAP).map(v => v.file);
+                let loaded = 0;
+                const total = files.length;
+
+                if (total === 0) {
+                    startBtn.textContent = "TAP TO START";
+                    startBtn.disabled = false;
+                    this.preloadComplete = true;
+                    return;
+                }
+
+                files.forEach(file => {
+                    const audio = new Audio();
+                    audio.preload = 'auto';
+
+                    audio.addEventListener('canplaythrough', () => {
+                        loaded++;
+                        statusP.textContent = `Loaded ${loaded}/${total} audio files`;
+                        if (loaded >= total) {
+                            startBtn.textContent = "TAP TO START";
+                            startBtn.disabled = false;
+                            statusP.textContent = "Audio ready! Now switch to SheldonRover WiFi.";
+                            statusP.style.color = "#4ecdc4";
+                            this.preloadComplete = true;
+                        }
+                    }, { once: true });
+
+                    audio.addEventListener('error', () => {
+                        loaded++;
+                        console.warn('Failed to load:', file);
+                        statusP.textContent = `Loaded ${loaded}/${total} audio files`;
+                        if (loaded >= total) {
+                            startBtn.textContent = "TAP TO START";
+                            startBtn.disabled = false;
+                            this.preloadComplete = true;
+                        }
+                    }, { once: true });
+
+                    audio.src = file;
+                    audio.load();
+                    this.audioCache[file] = audio;
                 });
             },
 
@@ -408,18 +463,24 @@
                 // Stop any current audio
                 this.stopAudio();
 
-                // Play Audio File
-                if (file) {
-                    console.log("Playing:", file);
+                // Play from cache (preloaded) or try network
+                if (file && this.audioCache[file]) {
+                    console.log("Playing from cache:", file);
+                    this.currentAudio = this.audioCache[file];
+                    this.currentAudio.currentTime = 0;
+                    this.currentAudio.play().catch(e => {
+                        console.error("Audio play failed:", e);
+                        this.speakTTS(text);
+                    });
+                } else if (file) {
+                    // Fallback: try loading directly (may fail if offline)
+                    console.log("Playing (not cached):", file);
                     this.currentAudio = new Audio(file);
                     this.currentAudio.play().catch(e => {
                         console.error("Audio play failed:", e);
-                        // Fallback?
-                        // this.speakTTS(text); 
+                        this.speakTTS(text);
                     });
                 } else {
-                    // Fallback to TTS if somehow file is missing in map but text exists? 
-                    // (Should not happen with current generator)
                     this.speakTTS(text);
                 }
             },
