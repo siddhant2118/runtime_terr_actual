@@ -366,6 +366,12 @@
         <button class="event-btn boot" onclick="sendEvent('BOOT')">🚀 Boot</button>
         <button class="event-btn move-start" onclick="sendEvent('MOVE_START')">▶️ Move</button>
         <button class="event-btn move-stop" onclick="sendEvent('MOVE_STOP')">⏹️ Stop</button>
+        <button class="event-btn" style="background: linear-gradient(145deg, #ec4899, #db2777);"
+            onclick="sendEvent('SAW_HUMAN')">👀 Saw Human</button>
+        <button class="event-btn" style="background: linear-gradient(145deg, #eab308, #ca8a04);"
+            onclick="sendEvent('RANDOM')">🎲 Random</button>
+        <button class="event-btn" style="background: linear-gradient(145deg, #6366f1, #4f46e5);"
+            onclick="sendEvent('IDLE_TOO_LONG')">😴 Idle</button>
     </div>
 
     <!-- Audio Selector -->
@@ -413,27 +419,15 @@
         let isConnected = false;
         let currentMode = 0;
 
-        // Audio database (loaded from CSV structure)
+        // Audio database - ONLY clips that actually exist
         const audioDatabase = [
-            { id: 'BOOT_0_0', category: 'BOOT', intensity: 0, transcript: 'Systems online. Please do not touch anything unnecessarily.' },
-            { id: 'BOOT_1_0', category: 'BOOT', intensity: 1, transcript: 'Initialization complete. Human interference is anticipated.' },
-            { id: 'BOOT_2_0', category: 'BOOT', intensity: 2, transcript: 'Boot complete. I am already disappointed in your methodology.' },
-            { id: 'COLLISION_0_0', category: 'COLLISION', intensity: 0, transcript: 'Unexpected contact. Revising model.' },
-            { id: 'COLLISION_0_1', category: 'COLLISION', intensity: 0, transcript: 'Collision detected. Suboptimal.' },
-            { id: 'COLLISION_1_0', category: 'COLLISION', intensity: 1, transcript: 'That obstacle was predictable. Your planning was not.' },
-            { id: 'COLLISION_2_0', category: 'COLLISION', intensity: 2, transcript: 'This is why we cannot have nice experiments.' },
-            { id: 'COLLISION_2_2', category: 'COLLISION', intensity: 2, transcript: 'This is malarkey!' },
-            { id: 'STUCK_0_0', category: 'STUCK', intensity: 0, transcript: 'I appear to be immobilized. This is... inconvenient.' },
-            { id: 'STUCK_1_0', category: 'STUCK', intensity: 1, transcript: 'I am stuck. The environment is non-compliant.' },
-            { id: 'STUCK_2_0', category: 'STUCK', intensity: 2, transcript: 'I refuse to proceed until the laws of physics are respected.' },
-            { id: 'STUCK_2_1', category: 'STUCK', intensity: 2, transcript: 'I am overwhelmed!' },
-            { id: 'RESET_0_0', category: 'RESET', intensity: 0, transcript: 'Reset acknowledged. Please be more careful.' },
-            { id: 'RESET_1_0', category: 'RESET', intensity: 1, transcript: 'Resetting. Again. Predictable.' },
-            { id: 'RESET_2_0', category: 'RESET', intensity: 2, transcript: 'Resetting because humans mistake repetition for progress.' },
-            { id: 'SAW_HUMAN_2_0', category: 'SAW_HUMAN', intensity: 2, transcript: "You're doomed!" },
-            { id: 'RANDOM_0_0', category: 'RANDOM', intensity: 0, transcript: 'Have you suffered a recent blow to the head?' },
-            { id: 'RANDOM_2_0', category: 'RANDOM', intensity: 2, transcript: 'Bazinga!' },
-            { id: 'RANDOM_2_1', category: 'RANDOM', intensity: 2, transcript: 'Oh, you want me to share credit? Get out.' },
+            { id: 'collision_2_2', category: 'COLLISION', transcript: 'This is malarkey!' },
+            { id: 'stuck_2_1', category: 'STUCK', transcript: 'I am overwhelmed! Overwhelmed, overworked, and showing too much mercy!' },
+            { id: 'saw_human_2_0', category: 'SAW_HUMAN', transcript: "You're doomed!" },
+            { id: 'random_0_0', category: 'RANDOM', transcript: 'Have you suffered a recent blow to the head?' },
+            { id: 'random_1_0', category: 'RANDOM', transcript: 'What sort of background do you have in science?' },
+            { id: 'random_2_0', category: 'RANDOM', transcript: 'Bazinga!' },
+            { id: 'random_2_1', category: 'RANDOM', transcript: 'Oh, you want me to share credit? Get out.' },
         ];
 
         // ============================================================
@@ -472,7 +466,7 @@
                 categories[category].forEach(clip => {
                     const option = document.createElement('option');
                     option.value = clip.id;
-                    option.textContent = `[${clip.intensity}] ${clip.transcript.substring(0, 40)}...`;
+                    option.textContent = clip.transcript.substring(0, 50) + (clip.transcript.length > 50 ? '...' : '');
                     group.appendChild(option);
                 });
 
