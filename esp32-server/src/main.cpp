@@ -47,6 +47,63 @@ void setupMotors();
 void setupSensors();
 float readUltrasonic();
 bool checkCollision();
+void handleRoot();
+
+// =============================================================
+// EMBEDDED WEB PAGE (served directly, no internet needed)
+// =============================================================
+
+const char REMOTE_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Sheldon Remote</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none}
+body{font-family:-apple-system,sans-serif;background:#1a1a2e;color:#fff;padding:15px;min-height:100vh}
+h1{text-align:center;font-size:1.3rem;color:#00d4ff;margin-bottom:15px}
+.status{background:rgba(255,255,255,.1);padding:10px;border-radius:10px;margin-bottom:15px;text-align:center}
+.dot{width:10px;height:10px;border-radius:50%;background:#ff4444;display:inline-block;margin-right:8px}
+.dot.ok{background:#44ff44}
+.stop{width:100%;padding:18px;font-size:1.3rem;font-weight:bold;background:linear-gradient(145deg,#ff4444,#cc0000);border:none;border-radius:12px;color:#fff;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px}
+.btn{padding:15px 8px;border:none;border-radius:10px;font-size:.75rem;font-weight:bold;color:#fff;text-transform:uppercase}
+.btn:active{transform:scale(.95)}
+.c1{background:linear-gradient(145deg,#ff6b6b,#ee5a5a)}
+.c2{background:linear-gradient(145deg,#ffa500,#e69500)}
+.c3{background:linear-gradient(145deg,#4ecdc4,#44b3ab)}
+.c4{background:linear-gradient(145deg,#a855f7,#9333ea)}
+.c5{background:linear-gradient(145deg,#22c55e,#16a34a)}
+.c6{background:linear-gradient(145deg,#ec4899,#db2777)}
+#log{background:#111;padding:10px;border-radius:8px;font-family:monospace;font-size:.8rem;max-height:100px;overflow-y:auto;color:#888}
+</style>
+</head>
+<body>
+<h1>🤖 Sheldon Remote</h1>
+<div class="status"><span class="dot" id="dot"></span><span id="st">Checking...</span></div>
+<button class="stop" onclick="stop()">⛔ EMERGENCY STOP</button>
+<div class="grid">
+<button class="btn c1" onclick="ev('COLLISION')">💥 Collision</button>
+<button class="btn c2" onclick="ev('STUCK')">🚧 Stuck</button>
+<button class="btn c3" onclick="ev('RESET')">🔄 Reset</button>
+<button class="btn c4" onclick="ev('BOOT')">🚀 Boot</button>
+<button class="btn c5" onclick="ev('SAW_HUMAN')">👀 Human</button>
+<button class="btn c6" onclick="ev('RANDOM')">🎲 Random</button>
+</div>
+<div id="log">Ready</div>
+<script>
+const B='http://192.168.4.1';
+function log(m){document.getElementById('log').innerHTML=m+'<br>'+document.getElementById('log').innerHTML}
+function ev(e){log('📤 '+e);fetch(B+'/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:e})}).then(r=>r.json()).then(d=>log('✅ Sent')).catch(x=>log('❌ Error'))}
+function stop(){log('🛑 STOP');fetch(B+'/stop',{method:'POST'}).then(r=>log('Stopped')).catch(x=>log('❌ Error'))}
+function ck(){fetch(B+'/status').then(r=>r.json()).then(d=>{document.getElementById('dot').className='dot ok';document.getElementById('st').textContent='Connected'}).catch(x=>{document.getElementById('dot').className='dot';document.getElementById('st').textContent='Disconnected'})}
+setInterval(ck,2000);ck();
+</script>
+</body>
+</html>
+)rawliteral";
 
 // =============================================================
 // MOTOR CONTROL
@@ -139,6 +196,10 @@ bool checkCollision() {
 // =============================================================
 // HTTP HANDLERS
 // =============================================================
+
+void handleRoot() {
+    server.send(200, "text/html", REMOTE_HTML);
+}
 
 void sendCORS() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -301,6 +362,8 @@ void setup() {
     Serial.println(AP_PASSWORD);
     
     // Setup HTTP routes
+    server.on("/", HTTP_GET, handleRoot);  // Serve remote control page
+    
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/status", HTTP_OPTIONS, handleOptions);
     
