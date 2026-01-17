@@ -3,6 +3,7 @@ import re
 import sys
 import os
 import csv
+import json
 from difflib import SequenceMatcher
 
 
@@ -38,6 +39,7 @@ CATEGORY_MAP = {
 
 ESP_DIST_DIR = os.path.join(ASSETS_DIR, 'esp32_dist')
 HEADER_FILE = os.path.join(ESP_DIST_DIR, 'audio_map.h')
+JS_MAP_FILE = os.path.join(BASE_DIR, 'lines_map.js')
 
 
 def generate_id(category, intensity, index):
@@ -150,6 +152,59 @@ const AudioAsset AUDIO_ASSETS[] = {
         
     print(f"Generated {HEADER_FILE}")
 
+def generate_js_map(db_rows):
+    print("Generating JS map...")
+    
+    # 1. Build lookup: SerialID -> { file, text }
+    # Also keep text lookup for backwards compat or debugging if needed? No, user wants ID.
+    
+    js_content = "window.AUDIO_ID_MAP = {\n"
+    
+    # Store items for the LINES construction
+    # Structure: category -> list of { id, text, file }
+    category_items = {}
+    
+    count = 0 
+    for row in db_rows:
+        if row['file_exists'] == "TRUE":
+            serial_id = row['serial_command']
+            text = row['transcript'].replace("'", "\\'")
+            filename = f"assets/audio/{row['audio_filename']}"
+            
+            # Add to ID Map
+            js_content += f"    {serial_id}: {{ file: '{filename}', text: '{text}' }},\n"
+            
+            # Add to Category List
+            cat = row['category']
+            if cat not in category_items:
+                category_items[cat] = []
+            
+            category_items[cat].append({
+                'id': serial_id,
+                'text': row['transcript'], # Raw text
+                'file': filename
+            })
+            
+            count += 1
+            
+    js_content += "};\n\n"
+    
+    # 2. Build flattened LINES object (Category -> List of IDs)
+    # The webapp wants to pick random from category.
+    # window.LINES = { "COLLISION": [101, 102, ...], ... }
+    
+    lines_obj = {}
+    for cat, items in category_items.items():
+        # Just store the IDs, webapp can look up details in AUDIO_ID_MAP
+        lines_obj[cat] = [item['id'] for item in items]
+
+    js_content += "window.LINES = " + json.dumps(lines_obj, indent=4) + ";\n"
+    
+    with open(JS_MAP_FILE, 'w') as f:
+        f.write(js_content)
+        
+    print(f"Generated {JS_MAP_FILE} with {count} mapped files and flattened LINES.")
+
 def normalize_text(text):
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
@@ -245,6 +300,7 @@ def main():
     rows = sync_database()
     rows = import_loose_files(rows)
     export_esp32(rows)
+    generate_js_map(rows)
 
 if __name__ == "__main__":
     main()
