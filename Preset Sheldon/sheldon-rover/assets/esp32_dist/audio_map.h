@@ -21,9 +21,11 @@ const AudioAsset AUDIO_ASSETS[] = {
     { 311, "/collision_1_1.wav" },
     { 320, "/collision_2_0.wav" },
     { 321, "/collision_2_1.wav" },
+    { 322, "/collision_2_2.mov" },
     { 400, "/stuck_0_0.wav" },
     { 410, "/stuck_1_0.wav" },
     { 420, "/stuck_2_0.wav" },
+    { 421, "/stuck_2_1.mp3" },
     { 500, "/idle_too_long_0_0.wav" },
     { 510, "/idle_too_long_1_0.wav" },
     { 520, "/idle_too_long_2_0.wav" },
@@ -36,6 +38,13 @@ const AudioAsset AUDIO_ASSETS[] = {
     { 800, "/mode_switch_0_0.wav" },
     { 810, "/mode_switch_1_0.wav" },
     { 820, "/mode_switch_2_0.wav" },
+    { 900, "/saw_human_0_0.wav" },
+    { 910, "/saw_human_1_0.wav" },
+    { 920, "/saw_human_2_0.mp3" },
+    { 950, "/random_0_0.mp3" },
+    { 960, "/random_1_0.mov" },
+    { 970, "/random_2_0.mp3" },
+    { 971, "/random_2_1.mov" },
     { -1, "" } // Sentinel
 };
 

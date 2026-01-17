@@ -22,15 +22,21 @@ LINES = {
     ],
     2: [
       "This is why we cannot have nice experiments.",
-      "Catastrophic error. Also, I was correct to distrust you."
+      "Catastrophic error. Also, I was correct to distrust you.",
+      "This is malarkey!"
     ]
   },
+
 
   "STUCK": {
     0: ["I appear to be immobilized. This is... inconvenient."],
     1: ["I am stuck. The environment is non-compliant."],
-    2: ["I refuse to proceed until the laws of physics are respected."]
+    2: [
+      "I refuse to proceed until the laws of physics are respected.",
+      "I am overwhelmed! Overwhelmed, overworked, and showing too much mercy!"
+    ]
   },
+
 
   "IDLE_TOO_LONG": {
     0: ["I am waiting. Efficiently."],
@@ -50,9 +56,26 @@ LINES = {
     2: ["Stopping because continuing would be irresponsible. Unlike you."]
   },
 
-  "MODE_SWITCH": {
+    "MODE_SWITCH": {
     0: ["Adjusting tolerance parameters."],
     1: ["Switching mode. Try to keep up."],
     2: ["Mode changed. Your incompetence remains constant."]
+  },
+
+  "SAW_HUMAN": {
+    0: ["Oh. It's you."],
+    1: ["Human detected. Prepare for disappointment."],
+    2: ["You're doomed!"]
+  },
+
+  "RANDOM": {
+     0: ["Have you suffered a recent blow to the head?"],
+     1: ["What sort of background do you have in science?"],
+     2: [
+        "Bazinga!",
+        "Oh, you want me to share credit? Get out."
+     ]
   }
 }
+
+

@@ -1,8 +1,16 @@
-import csv
-import os
+import shutil
+import re
 import sys
+import os
+import csv
+from difflib import SequenceMatcher
+
 
 # Add current directory to path so we can import lines_sheldon
+
+
+# Add current directory to path so we can import lines_sheldon
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from lines_sheldon import LINES
 
@@ -20,8 +28,13 @@ CATEGORY_MAP = {
     "IDLE_TOO_LONG": 500,
     "RESET": 600,
     "MOVE_STOP": 700,
-    "MODE_SWITCH": 800
+    "RESET": 600,
+    "MOVE_STOP": 700,
+    "MODE_SWITCH": 800,
+    "SAW_HUMAN": 900,
+    "RANDOM": 950
 }
+
 
 ESP_DIST_DIR = os.path.join(ASSETS_DIR, 'esp32_dist')
 HEADER_FILE = os.path.join(ESP_DIST_DIR, 'audio_map.h')
@@ -137,6 +150,92 @@ const AudioAsset AUDIO_ASSETS[] = {
         
     print(f"Generated {HEADER_FILE}")
 
+def normalize_text(text):
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+def import_loose_files(db_rows):
+    print("Scanning for loose audio files...")
+    # Scan root directory (up two levels from assets/audio: assets/audio -> assets -> sheldon-rover -> root)
+    # Wait, BASE_DIR is sheldon-rover. User said "files in the preset sheldon folder".
+    # Existing structure: runtime_terr/Preset Sheldon/sheldon-rover/manage_assets.py
+    # User's ls showed files in runtime_terr directly?
+    # "find . -maxdepth 3" showed files in "Preset Sheldon/sheldon-rover/" but the LS command in thought block showed files like "./you're doooooooomed.mp3".
+    # Let's search in ../../ (runtime_terr) and ../ (Preset Sheldon) from BASE_DIR?
+    # Actually, the LS output showing files at ./ meant they were in the CWD of the command.
+    # The command CWD was /Users/manya/Desktop/runtime_terr.
+    # So files are in runtime_terr.
+    
+    root_search_path = os.path.dirname(os.path.dirname(BASE_DIR)) # runtime_terr
+    
+    # Also check current dir just in case
+    search_paths = [root_search_path, BASE_DIR]
+    
+    candidates = []
+    for path in search_paths:
+        if not os.path.exists(path): continue
+        for user_file in os.listdir(path):
+            if user_file.lower().endswith(('.mp3', '.wav', '.m4a', '.mov')):
+                candidates.append((path, user_file))
+                
+    if not candidates:
+        print("No loose audio files found.")
+        return db_rows
+
+    updates_count = 0
+    
+    for row in db_rows:
+        if row['file_exists'] == "TRUE":
+            continue
+            
+        transcript_norm = normalize_text(row['transcript'])
+        best_match = None
+        best_score = 0.0
+        
+        for path, filename in candidates:
+            # Check if this file is already claimed? (Simplified: no, assume 1-to-1 best match)
+            # Normalize filename body
+            file_body = os.path.splitext(filename)[0]
+            file_norm = normalize_text(file_body)
+            
+            # Substring check first
+            if transcript_norm in file_norm or file_norm in transcript_norm:
+                score = 0.8 + (0.2 * (len(transcript_norm) / len(file_norm) if len(file_norm) > 0 else 0))
+            else:
+                score = SequenceMatcher(None, transcript_norm, file_norm).ratio()
+                
+            if score > 0.6 and score > best_score:
+                best_match = (path, filename)
+                best_score = score
+        
+        if best_match and best_score > 0.6:
+            src_path, src_filename = best_match
+            ext = os.path.splitext(src_filename)[1].lower()
+            
+            # Rename extension in DB to match actual file if different
+            target_filename = os.path.splitext(row['audio_filename'])[0] + ext
+            row['audio_filename'] = target_filename
+            
+            full_src = os.path.join(src_path, src_filename)
+            full_dest = os.path.join(AUDIO_DIR, target_filename)
+            
+            print(f"Importing: '{src_filename}' -> '{target_filename}' (Match: {int(best_score*100)}%)")
+            shutil.move(full_src, full_dest)
+            row['file_exists'] = "TRUE"
+            updates_count += 1
+            
+            # Remove from candidates so it's not reused
+            candidates.remove(best_match)
+
+    if updates_count > 0:
+        # Re-save DB to update extensions
+        fieldnames = ['id', 'category', 'intensity', 'index', 'serial_command', 'audio_filename', 'transcript', 'file_exists']
+        with open(DATABASE_FILE, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(db_rows)
+            
+    return db_rows
+
 def main():
     if not os.path.exists(ASSETS_DIR):
         os.makedirs(ASSETS_DIR)
@@ -144,6 +243,7 @@ def main():
         os.makedirs(AUDIO_DIR)
         
     rows = sync_database()
+    rows = import_loose_files(rows)
     export_esp32(rows)
 
 if __name__ == "__main__":

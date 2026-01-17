@@ -10,6 +10,11 @@ def main():
     print("Commands:")
     print("  [EVENT_NAME]   e.g. BOOT, COLLISION, RESET, MOVE_START, STUCK")
     print("  intensity [0-2]  Set base strictness level")
+    print("  h                Human Detected (SAW_HUMAN)")
+    print("  h                Human Detected (SAW_HUMAN)")
+    print("  r                Random Line (RANDOM)")
+    print("  m                Malarkey (COLLISION High)")
+    print("  o                Overwhelmed (STUCK High)")
     print("  quit             Exit")
     print("----------------------------------------")
 
@@ -40,6 +45,21 @@ def main():
             else:
                 print("Usage: intensity [0|1|2]")
             continue
+
+        # Mappings
+        if user_input == "H":
+            user_input = "SAW_HUMAN"
+        elif user_input == "R":
+            user_input = "RANDOM"
+        elif user_input == "M":
+             # Force high intensity collision
+             engine.set_intensity(2)
+             user_input = "COLLISION"
+        elif user_input == "O":
+             # Force high intensity stuck
+             engine.set_intensity(2)
+             user_input = "STUCK"
+
 
         # Treat as event
         line = engine.on_event(user_input)
