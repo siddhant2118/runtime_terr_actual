@@ -1,5 +1,5 @@
-// ESP32 Sheldon Rover - Autonomous + Joystick
-// Hosts a Wi-Fi AP with HTTP endpoints + LittleFS
+// ESP32 Robot - Fixed Hardware Config
+// Pins: 4, 5, 6, 7 | No PWM | /detect endpoint
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -13,93 +13,151 @@
 const char* AP_SSID = "SheldonRover";
 const char* AP_PASSWORD = "bazinga123";
 
-// Motor Pins (L298N)
-#define PIN_MOTOR_LEFT_FWD   5
-#define PIN_MOTOR_LEFT_BCK   6
-#define PIN_MOTOR_RIGHT_FWD  7
-#define PIN_MOTOR_RIGHT_BCK  15
-
-// Sensors
-#define PIN_ULTRASONIC_TRIG  16
-#define PIN_ULTRASONIC_ECHO  17
-#define PIN_BUMP_LEFT        18
-#define PIN_BUMP_RIGHT       8
-
-// Constants
-#define OBSTACLE_DIST_CM     25
-#define REVERSE_TIME_MS      800
-#define TURN_TIME_MS         600
-#define RANDOM_EVENT_MS      20000
+// NEW PIN MAP (Requested)
+// Left Motor
+#define IN1 4  // Forward
+#define IN2 5  // Backward
+// Right Motor
+#define IN3 6  // Forward
+#define IN4 7  // Backward
 
 // =============================================================
 // GLOBAL STATE
 // =============================================================
 
 WebServer server(80);
-
-String currentMode = "MANUAL"; // MANUAL or AUTO
-String lastEvent = "";         // Event for iPhone 2 (Face)
-
-unsigned long lastAutoMove = 0;
-unsigned long lastRandomEvent = 0;
-int autoState = 0; // 0=Forward, 1=Back, 2=Turn
+String lastEvent = ""; // For audio polling
 
 // =============================================================
-// UTIL
+// MOTOR FUNCTIONS (Full Speed / Bang-Bang)
 // =============================================================
 
-void moveMotors(int x, int y) {
-    // x: -100 to 100 (left/right)
-    // y: -100 to 100 (back/fwd)
+void setupMotors() {
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    pinMode(IN3, OUTPUT);
+    pinMode(IN4, OUTPUT);
     
-    // Limits
-    if(x < -100) x = -100; if(x > 100) x = 100;
-    if(y < -100) y = -100; if(y > 100) y = 100;
-
-    int leftSpeed = y + x;
-    int rightSpeed = y - x;
-
-    leftSpeed = constrain(leftSpeed, -100, 100);
-    rightSpeed = constrain(rightSpeed, -100, 100);
-
-    // Left Motor
-    if (leftSpeed > 0) {
-        analogWrite(PIN_MOTOR_LEFT_FWD, map(leftSpeed, 0, 100, 0, 255));
-        digitalWrite(PIN_MOTOR_LEFT_BCK, LOW);
-    } else {
-        analogWrite(PIN_MOTOR_LEFT_FWD, 0);
-        analogWrite(PIN_MOTOR_LEFT_BCK, map(abs(leftSpeed), 0, 100, 0, 255)); 
-        // Note: For PWM on BCK pin, use analogWrite if supported or just digitalWrite HIGH for simple H-Bridge
-        // L298N supports PWM on controls.
-    }
-
-    // Right Motor
-    if (rightSpeed > 0) {
-        analogWrite(PIN_MOTOR_RIGHT_FWD, map(rightSpeed, 0, 100, 0, 255));
-        digitalWrite(PIN_MOTOR_RIGHT_BCK, LOW);
-    } else {
-        analogWrite(PIN_MOTOR_RIGHT_FWD, 0);
-        analogWrite(PIN_MOTOR_RIGHT_BCK, map(abs(rightSpeed), 0, 100, 0, 255));
-    }
+    // Initial State: Stopped
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
 }
 
 void stopMotors() {
-    moveMotors(0, 0);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
+    Serial.println("MOTORS: STOP");
 }
 
-float getDistance() {
-    digitalWrite(PIN_ULTRASONIC_TRIG, LOW);
-    delayMicroseconds(2);
-    digitalWrite(PIN_ULTRASONIC_TRIG, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(PIN_ULTRASONIC_TRIG, LOW);
-    long duration = pulseIn(PIN_ULTRASONIC_ECHO, HIGH, 30000); // 30ms timeout
-    if (duration == 0) return 100.0; // No echo = far
-    return duration * 0.034 / 2;
+void moveForward() {
+    // Left Fwd, Right Fwd
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+    Serial.println("MOTORS: FORWARD");
 }
 
-bool checkBump() {
-    return (digitalRead(PIN_BUMP_LEFT) == LOW || digitalRead(PIN_BUMP_RIGHT) == LOW);
+void moveBackward() {
+    // Left Back, Right Back
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    Serial.println("MOTORS: BACKWARD");
+}
+
+void turnLeft() {
+    // Left Back, Right Fwd (Spin)
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+    Serial.println("MOTORS: LEFT");
+}
+
+void turnRight() {
+    // Left Fwd, Right Back (Spin)
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    Serial.println("MOTORS: RIGHT");
+}
+
+// Joystick Support (Mapped to Bang-Bang)
+void moveMotorsLegacy(int x, int y) {
+    if (abs(x) < 20 && abs(y) < 20) { stopMotors(); return; }
+    
+    // Simple 4-way direction for joystick
+    if (y > 30) { moveForward(); }
+    else if (y < -30) { moveBackward(); }
+    else if (x < -30) { turnLeft(); }
+    else if (x > 30) { turnRight(); }
+}
+
+// =============================================================
+// EVENT LOGIC (Maneuvers)
+// =============================================================
+
+void performManeuver(String type) {
+    Serial.println("MANEUVER: " + type);
+    
+    // Record event for Voice interface
+    lastEvent = type; 
+    // MAPPING: "saw_human" -> "SAW_HUMAN" (Case correction for audio map)
+    if(type == "saw_human") lastEvent = "SAW_HUMAN";
+    if(type == "collision") lastEvent = "COLLISION";
+    if(type == "stuck") lastEvent = "STUCK";
+    if(type == "random") lastEvent = "RANDOM";
+
+    if (type == "saw_human") {
+        // Stop → Turn right → Move forward
+        stopMotors();
+        delay(500);
+        turnRight();
+        delay(800);
+        moveForward();
+        // Stays forward until next event? Or for a duration?
+        // User said "Move forward", implies continuous.
+        // We leave it running forward.
+    }
+    else if (type == "collision") {
+        // Stop → Backup 1 sec → Turn left → Move forward
+        stopMotors();
+        delay(200);
+        moveBackward();
+        delay(1000);
+        turnLeft();
+        delay(800);
+        moveForward();
+    }
+    else if (type == "stuck") {
+        // Backup 2 sec → Turn 180 (Spin) → Move forward
+        stopMotors();
+        moveBackward();
+        delay(2000);
+        turnRight(); // 180ish
+        delay(1500);
+        moveForward();
+    }
+    else if (type == "random") {
+        // Random movement
+        int action = random(0, 4);
+        if(action == 0) moveForward();
+        if(action == 1) moveBackward();
+        if(action == 2) turnLeft();
+        if(action == 3) turnRight();
+        delay(1000);
+        stopMotors();
+    }
+    else if (type == "stop") {
+        stopMotors();
+    }
 }
 
 // =============================================================
@@ -108,44 +166,47 @@ bool checkBump() {
 
 void sendCORS() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+// 1. Existing Handlers (Remote/Voice)
 void handleStatic(String path, String type) {
     if(LittleFS.exists(path)) {
         File file = LittleFS.open(path, "r");
         server.streamFile(file, type);
         file.close();
     } else {
-        server.send(404, "text/plain", "File Missing: " + path);
+        server.send(404, "text/plain", "Not Found");
     }
 }
-
 void handleRoot() { handleStatic("/index.html", "text/html"); }
 void handleVoice() { handleStatic("/voice.html", "text/html"); }
 void handleAudioMap() { handleStatic("/audio_map.json", "application/json"); }
 
-void handleMode() {
+// 2. NEW DETECT HANDLER (Requested)
+// GET /detect?type=saw_human
+void handleDetect() {
     sendCORS();
-    if (server.hasArg("plain")) {
-        JsonDocument doc;
-        deserializeJson(doc, server.arg("plain"));
-        if(doc["mode"].is<String>()) {
-            currentMode = doc["mode"].as<String>();
-            Serial.println("MODE SET: " + currentMode);
-            // Reset auto state
-            if(currentMode == "AUTO") {
-                autoState = 0; 
-                lastAutoMove = millis();
-            } else {
-                stopMotors();
-            }
-        }
+    if (server.hasArg("type")) {
+        String type = server.arg("type");
+        server.send(200, "text/plain", "OK: " + type);
+        performManeuver(type);
+    } else {
+        server.send(400, "text/plain", "Missing type param");
     }
-    server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// 3. Status/Event polling for Voice
+void handleEventGet() {
+    sendCORS();
+    JsonDocument doc;
+    doc["event"] = lastEvent;
+    String out;
+    serializeJson(doc, out);
+    lastEvent = ""; 
+    server.send(200, "application/json", out);
+}
+
+// 4. Legacy Joystick Handler (Mapped to new move functions)
 void handleMove() {
     sendCORS();
     if (server.hasArg("plain")) {
@@ -153,54 +214,12 @@ void handleMove() {
         deserializeJson(doc, server.arg("plain"));
         int x = doc["x"];
         int y = doc["y"];
-        
-        // Joystick Override
-        if (currentMode == "AUTO" && (abs(x) > 10 || abs(y) > 10)) {
-            currentMode = "MANUAL";
-            Serial.println("Joystick Override -> MANUAL");
-        }
-        
-        if (currentMode == "MANUAL") {
-            moveMotors(x, y);
-        }
+        moveMotorsLegacy(x, y);
     }
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
-void handleEventPost() {
-    sendCORS();
-    if (server.hasArg("plain")) {
-        JsonDocument doc;
-        deserializeJson(doc, server.arg("plain"));
-        String e = doc["event"];
-        if (e.length() > 0) {
-            lastEvent = e;
-            Serial.println("EVENT: " + lastEvent);
-        }
-    }
-    server.send(200, "application/json", "{\"ok\":true}");
-}
-
-void handleEventGet() {
-    sendCORS();
-    JsonDocument doc;
-    doc["event"] = lastEvent;
-    String out;
-    serializeJson(doc, out);
-    lastEvent = ""; // Consume
-    server.send(200, "application/json", out);
-}
-
-void handleStatus() {
-    sendCORS();
-    JsonDocument doc;
-    doc["mode"] = currentMode;
-    doc["distance"] = getDistance(); // debug
-    String out;
-    serializeJson(doc, out);
-    server.send(200, "application/json", out);
-}
-
+// Audio Wildcard
 void handleAudio() {
     sendCORS();
     String path = server.uri();
@@ -209,7 +228,7 @@ void handleAudio() {
         server.streamFile(f, "audio/mpeg");
         f.close();
     } else {
-        server.send(404, "text/plain", "Not Found");
+        server.send(404, "text/plain", "Audio Not Found");
     }
 }
 
@@ -219,102 +238,50 @@ void handleAudio() {
 
 void setup() {
     Serial.begin(115200);
+    Serial.println("\n=== Sheldon Rover Configured ===");
     
-    // Pins
-    pinMode(PIN_MOTOR_LEFT_FWD, OUTPUT);
-    pinMode(PIN_MOTOR_LEFT_BCK, OUTPUT);
-    pinMode(PIN_MOTOR_RIGHT_FWD, OUTPUT);
-    pinMode(PIN_MOTOR_RIGHT_BCK, OUTPUT);
-    
-    pinMode(PIN_ULTRASONIC_TRIG, OUTPUT);
-    pinMode(PIN_ULTRASONIC_ECHO, INPUT);
-    pinMode(PIN_BUMP_LEFT, INPUT_PULLUP);
-    pinMode(PIN_BUMP_RIGHT, INPUT_PULLUP);
+    setupMotors();
 
+    // LittleFS
     if(!LittleFS.begin(true)){
-        Serial.println("LITTLEFS FAIL");
+        Serial.println("LittleFS Mount Failed");
         return;
     }
 
+    // WiFi
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
-    Serial.println(WiFi.softAPIP());
+    
+    IPAddress IP = WiFi.softAPIP();
+    Serial.print("Access Point IP: ");
+    Serial.println(IP); // Print IP for iPhone app!
 
     // Routes
     server.on("/", HTTP_GET, handleRoot);
     server.on("/voice", HTTP_GET, handleVoice);
     server.on("/audio_map.json", HTTP_GET, handleAudioMap);
-    server.on("/move", HTTP_POST, handleMove);
-    server.on("/mode", HTTP_POST, handleMode);
-    server.on("/event", HTTP_POST, handleEventPost);
+    
+    // NEW: Detection Endpoint
+    server.on("/detect", HTTP_GET, handleDetect);
+    
+    // Legacy support
     server.on("/event", HTTP_GET, handleEventGet);
-    server.on("/status", HTTP_GET, handleStatus);
-    
-    // Options
+    server.on("/move", HTTP_POST, handleMove);
     server.on("/move", HTTP_OPTIONS, [](){ sendCORS(); server.send(204); });
-    server.on("/mode", HTTP_OPTIONS, [](){ sendCORS(); server.send(204); });
-    server.on("/event", HTTP_OPTIONS, [](){ sendCORS(); server.send(204); });
-    
-    // Audio wildcard
+
+    // Audio Fallback
     server.onNotFound([](){
         if(server.uri().endsWith(".mp3")) handleAudio();
         else server.send(404);
     });
 
     server.begin();
-    lastEvent = "BOOT";
+    Serial.println("HTTP Server Started");
 }
-
-// =============================================================
-// MAIN LOOP - THE BRAIN
-// =============================================================
 
 void loop() {
     server.handleClient();
-
-    // Autonomous Logic
-    if (currentMode == "AUTO") {
-        unsigned long now = millis();
-        float dist = getDistance();
-        bool bump = checkBump();
-
-        // 1. Safety / Collision
-        if (autoState == 0) { // Driving Forward state
-            if (bump || (dist < OBSTACLE_DIST_CM && dist > 1.0)) {
-                // COLLISION DETECTED
-                stopMotors();
-                autoState = 1; // Go to Back state
-                lastAutoMove = now;
-                lastEvent = (bump) ? "COLLISION" : "STUCK"; // Or SAW_HUMAN if distance
-                if(dist < 10) lastEvent = "SAW_HUMAN"; // Close proxy
-                Serial.println("Obstacle! " + lastEvent);
-            } else {
-                moveMotors(0, 40); // Drive Forward slow
-            }
-        } 
-        else if (autoState == 1) { // Reversing
-            moveMotors(0, -45);
-            if (now - lastAutoMove > REVERSE_TIME_MS) {
-                autoState = 2; // Turn
-                lastAutoMove = now;
-            }
-        }
-        else if (autoState == 2) { // Turning
-            moveMotors(60, 0); // Spin right
-            if (now - lastAutoMove > TURN_TIME_MS) {
-                autoState = 0; // Back to Forward
-                lastAutoMove = now;
-            }
-        }
-
-        // 2. Random Commentary
-        if (now - lastRandomEvent > RANDOM_EVENT_MS) {
-            if (random(0, 100) < 30) { // 30% chance every 20s
-                 lastEvent = "RANDOM";
-            }
-            lastRandomEvent = now;
-        }
-    }
-    
-    delay(5);
+    delay(1);
+    // Note: No autonomous loop here anymore. 
+    // Movement is purely event-driven by /detect or joystick.
 }
