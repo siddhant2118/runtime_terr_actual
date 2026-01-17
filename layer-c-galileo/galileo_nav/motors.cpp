@@ -15,7 +15,9 @@ void setupMotors() {
 void moveForward() {
     digitalWrite(PIN_MOTOR_LEFT_BCK, LOW);
     digitalWrite(PIN_MOTOR_RIGHT_BCK, LOW);
-    analogWrite(PIN_MOTOR_LEFT_FWD, 200); // PWM speed example
+    // ESP32 Arduino Core 3.0+ supports analogWrite.
+    // Use 150-200 for speed (0-255).
+    analogWrite(PIN_MOTOR_LEFT_FWD, 200); 
     analogWrite(PIN_MOTOR_RIGHT_FWD, 200);
     _moving = true;
 }
