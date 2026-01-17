@@ -101,6 +101,13 @@ function ev(e){log('📤 '+e);fetch(B+'/event',{method:'POST',headers:{'Content-
 function stop(){log('🛑 STOP');fetch(B+'/stop',{method:'POST'}).then(r=>log('Stopped')).catch(x=>log('❌ Error'))}
 function ck(){fetch(B+'/status').then(r=>r.json()).then(d=>{document.getElementById('dot').className='dot ok';document.getElementById('st').textContent='Connected'}).catch(x=>{document.getElementById('dot').className='dot';document.getElementById('st').textContent='Disconnected'})}
 setInterval(ck,2000);ck();
+
+// New: Load Audio Map for specific playback
+/* 
+Note: Simple remote implementation doesn't have the audio dropdown UI in the C++ embedded string yet.
+If we want to re-add it, we need to update REMOTE_HTML structure first. 
+For now, let's keep the existing buttons working as they send EVENTS which trigger the Character audio.
+*/
 </script>
 </body>
 </html>
@@ -128,53 +135,128 @@ h1{font-size:2rem;color:#4ecdc4;margin-bottom:20px}
 </head>
 <body>
 <button id="start" onclick="init()">🔊 TAP TO START</button>
-<div id="main" class="hidden">
-<h1>🤖 Sheldon Voice</h1>
-<div id="status">Connecting...</div>
-<div id="event">--</div>
-<div id="speech">"Waiting for events..."</div>
-</div>
-<script>
-const LINES={
-BOOT:["Systems online. I already regret this.","Boot complete. Try not to break anything."],
-COLLISION:["This is malarkey!","We have made contact with an obstacle. How pedestrian.","That was entirely predictable."],
-STUCK:["I am overwhelmed!","I appear to be immobilized. This is your fault.","The universe is testing my patience."],
-RESET:["Resetting. Again. Predictable.","Fine. We shall try this again."],
-SAW_HUMAN:["You are doomed!","A human. How... unfortunate.","I see you there. Do not touch me."],
-RANDOM:["Bazinga!","Have you suffered a recent blow to the head?","I am not crazy. My mother had me tested."]
-};
-let synth=window.speechSynthesis;
-function init(){
-document.getElementById('start').classList.add('hidden');
-document.getElementById('main').classList.remove('hidden');
-let u=new SpeechSynthesisUtterance("Initializing Sheldon protocol.");
-synth.speak(u);
-poll();
-setInterval(poll,500);
-}
+    <div id="main" class="hidden">
+        <h1>🤖 Sheldon Voice</h1>
+        <div id="status">Connecting...</div>
+        <div id="debug" style="font-size:0.8rem;color:#888;height:50px;overflow:auto;border:1px solid #333;margin:10px;width:90%;">Log...</div>
+        <div id="event">--</div>
+        <div id="speech">"Waiting for events..."</div>
+    </div>
+    <script>
+    const LINES={
+    BOOT:["Systems online. I already regret this.","Boot complete. Try not to break anything."],
+    COLLISION:["This is malarkey!","We have made contact with an obstacle. How pedestrian.","That was entirely predictable."],
+    STUCK:["I am overwhelmed!","I appear to be immobilized. This is your fault.","The universe is testing my patience."],
+    RESET:["Resetting. Again. Predictable.","Fine. We shall try this again."],
+    SAW_HUMAN:["You are doomed!","A human. How... unfortunate.","I see you there. Do not touch me."],
+    RANDOM:["Bazinga!","Have you suffered a recent blow to the head?","I am not crazy. My mother had me tested."]
+    };
+    
+    let synth=window.speechSynthesis;
+    let audioMap = {};
+    let globalAudio = new Audio(); // Reusable object for iOS
+    
+    function dbg(m) {
+        console.log(m);
+        let d = document.getElementById('debug');
+        d.innerHTML = m + "<br>" + d.innerHTML;
+    }
+    
+    function init(){
+        document.getElementById('start').classList.add('hidden');
+        document.getElementById('main').classList.remove('hidden');
+        
+        // Unlock Audio Context for iOS
+        // Playing empty or silent audio on user gesture unlocks the element
+        globalAudio.src = ""; 
+        globalAudio.play().catch(e=>{}); 
+        
+        dbg("Fetching map...");
+        fetch('/audio_map.json')
+            .then(r => {
+                if(!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+            })
+            .then(d => {
+                audioMap = d;
+                dbg("Map Loaded! Keys: " + Object.keys(d).length);
+                speak("BOOT");
+            })
+            .catch(e => {
+                dbg("Map ERROR: " + e.message);
+                let u=new SpeechSynthesisUtterance("Error loading audio.");
+                synth.speak(u);
+            });
+        
+        poll();
+        setInterval(poll,500);
+    }
+
 function poll(){
-fetch('http://192.168.4.1/event').then(r=>r.json()).then(d=>{
-document.getElementById('status').textContent='Connected';
-document.getElementById('status').className='ok';
-if(d.event && d.event!==''){
-let ev=d.event;
-document.getElementById('event').textContent=ev;
-speak(ev);
+    fetch('http://192.168.4.1/event').then(r=>r.json()).then(d=>{
+        document.getElementById('status').textContent='Connected';
+        document.getElementById('status').className='ok';
+        if(d.event && d.event!==''){
+            let ev=d.event;
+            document.getElementById('event').textContent=ev;
+            speak(ev);
+        }
+    }).catch(e=>{
+        document.getElementById('status').textContent='Disconnected';
+        document.getElementById('status').className='';
+    });
 }
-}).catch(e=>{
-document.getElementById('status').textContent='Disconnected';
-document.getElementById('status').className='';
-});
-}
+
 function speak(ev){
-let lines=LINES[ev]||LINES['RANDOM'];
-let line=lines[Math.floor(Math.random()*lines.length)];
-document.getElementById('speech').textContent='"'+line+'"';
-synth.cancel();
-let u=new SpeechSynthesisUtterance(line);
-u.rate=0.9;u.pitch=1.1;
-synth.speak(u);
+    // Try to play from files first
+    // Event may be just "COLLISION" or "SAY:collision_2_2.mp3"
+    
+    // 1. Check if event maps to a category in audioMap
+    // e.g. ev="COLLISION" -> audioMap["COLLISION"] -> pick random
+    if (audioMap[ev] && audioMap[ev].length > 0) {
+        let files = audioMap[ev];
+        let file = files[Math.floor(Math.random() * files.length)];
+        let path = "/" + ev + "/" + file;
+        playAudio(path, ev);
+        return;
+    }
+    
+    // 2. Check if event is a specific SAY command
+    if (ev.startsWith("SAY:")) {
+        let fileId = ev.split(":")[1]; 
+        // We need to find where this file lives in map
+        for (let cat in audioMap) {
+            if (audioMap[cat].includes(fileId)) {
+                playAudio("/" + cat + "/" + fileId, "Manual Override");
+                return;
+            }
+        }
+    }
+
+    // 3. Fallback to TTS
+    let lines=LINES[ev]||LINES['RANDOM'];
+    let line=lines[Math.floor(Math.random()*lines.length)];
+    document.getElementById('speech').textContent='\"'+line+'\"';
+    synth.cancel();
+    let u=new SpeechSynthesisUtterance(line);
+    u.rate=0.9;u.pitch=1.1;
+    synth.speak(u);
 }
+
+    function playAudio(path) {
+        document.getElementById('speech').textContent = "Playing: " + path;
+        dbg("Trying: " + path);
+        
+        // Reuse global object - CRITICAL for iOS
+        globalAudio.src = path;
+        globalAudio.play()
+            .then(() => dbg("Playing..."))
+            .catch(e => {
+                dbg("Play FAIL: " + e.message);
+                let u=new SpeechSynthesisUtterance("Audio missing.");
+                synth.speak(u);
+            });
+    }
 </script>
 </body>
 </html>
@@ -417,6 +499,68 @@ void handleNotFound() {
 }
 
 // =============================================================
+// FILE SYSTEM (LittleFS)
+// =============================================================
+#include <LittleFS.h>
+
+void handleStaticFile(String path, String contentType) {
+    if (LittleFS.exists(path)) {
+        File file = LittleFS.open(path, "r");
+        server.streamFile(file, contentType);
+        file.close();
+    } else {
+        server.send(404, "application/json", "{\"error\":\"File not found\"}");
+    }
+}
+
+// Serve audio files dynamically
+void handleAudio() {
+    sendCORS();
+    String path = server.uri(); // e.g., /audio/random/foo.mp3
+    
+    // Remove prefix if needed or map directly. 
+    // Our structure in data is flattened or categorized?
+    // Data dir: /CATEGORY/filename.mp3
+    // URI: /CATEGORY/filename.mp3
+    // LittleFS path: /CATEGORY/filename.mp3
+    
+    if (LittleFS.exists(path)) {
+        File file = LittleFS.open(path, "r");
+        server.streamFile(file, "audio/mpeg");
+        file.close();
+    } else {
+        server.send(404, "text/plain", "Audio not found");
+    }
+}
+
+void handleAudioMap() {
+    sendCORS();
+    handleStaticFile("/audio_map.json", "application/json");
+}
+
+void handleList() {
+    sendCORS();
+    String output = "[";
+    File root = LittleFS.open("/");
+    File file = root.openNextFile();
+    while(file){
+        if(output != "[") output += ",";
+        output += "\"" + String(file.name()) + "\"";
+        if(file.isDirectory()){
+            File sub = LittleFS.open(file.path());
+            File subfile = sub.openNextFile();
+             while(subfile){
+                output += ",\"" + String(subfile.path()) + "\"";
+                subfile = sub.openNextFile();
+            }
+        }
+        file = root.openNextFile();
+    }
+    output += "]";
+    server.send(200, "application/json", output);
+}
+
+// =============================================================
 // SETUP & LOOP
 // =============================================================
 
@@ -428,6 +572,13 @@ void setup() {
     setupMotors();
     setupSensors();
     
+    // Initialize File System
+    if(!LittleFS.begin(true)){
+        Serial.println("LittleFS Mount Failed");
+        return;
+    }
+    Serial.println("LittleFS Mounted");
+
     // Start Wi-Fi AP
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
@@ -443,6 +594,7 @@ void setup() {
     // Setup HTTP routes
     server.on("/", HTTP_GET, handleRoot);  // Serve remote control page
     server.on("/voice", HTTP_GET, handleVoice);  // Serve voice/speaker page
+    server.on("/audio_map.json", HTTP_GET, handleAudioMap); // Audio manifest
     
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/status", HTTP_OPTIONS, handleOptions);
@@ -463,7 +615,14 @@ void setup() {
     server.on("/move", HTTP_POST, handlePostMove);
     server.on("/move", HTTP_OPTIONS, handleOptions);
     
-    server.onNotFound(handleNotFound);
+    // Wildcard handler for audio files (must be last-ish)
+    server.onNotFound([](){
+        if(server.uri().endsWith(".mp3")) {
+            handleAudio();
+        } else {
+            handleNotFound();
+        }
+    });
     
     server.begin();
     Serial.println("HTTP server started!");

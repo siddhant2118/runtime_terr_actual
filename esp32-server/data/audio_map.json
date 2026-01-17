@@ -1,0 +1,38 @@
+{
+  "SAW_HUMAN": [
+    "saw_human_1.mp3",
+    "saw_human_2.mp3",
+    "saw_human_3.mp3",
+    "saw_human_4.mp3",
+    "saw_human_5.mp3",
+    "saw_human_6.mp3",
+    "saw_human_7.mp3"
+  ],
+  "BOOT": [
+    "boot_1.mp3"
+  ],
+  "STUCK": [
+    "stuck_1.mp3",
+    "stuck_2.mp3"
+  ],
+  "RANDOM": [
+    "random_1.mp3",
+    "random_2.mp3",
+    "random_3.mp3",
+    "random_4.mp3",
+    "random_5.mp3",
+    "random_6.mp3",
+    "random_7.mp3",
+    "random_8.mp3",
+    "random_9.mp3",
+    "random_10.mp3",
+    "random_11.mp3"
+  ],
+  "COLLISION": [
+    "collision_1.mp3",
+    "collision_2.mp3",
+    "collision_3.mp3",
+    "collision_4.mp3",
+    "collision_5.mp3"
+  ]
+}

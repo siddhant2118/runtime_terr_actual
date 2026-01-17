@@ -207,4 +207,6 @@
  /Users/siddhant/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/detail/RequestHandler.h \
  .pio/libdeps/esp32s3/ArduinoJson/src/ArduinoJson.h \
  .pio/libdeps/esp32s3/ArduinoJson/src/ArduinoJson.hpp \
- .pio/libdeps/esp32s3/ArduinoJson/src/ArduinoJson/Configuration.hpp
+ .pio/libdeps/esp32s3/ArduinoJson/src/ArduinoJson/Configuration.hpp \
+ /Users/siddhant/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src/LittleFS.h \
+ /Users/siddhant/.platformio/packages/framework-arduinoespressif32/libraries/FS/src/FS.h
