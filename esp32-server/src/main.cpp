@@ -48,6 +48,7 @@ void setupSensors();
 float readUltrasonic();
 bool checkCollision();
 void handleRoot();
+void handleVoice();
 
 // =============================================================
 // EMBEDDED WEB PAGE (served directly, no internet needed)
@@ -100,6 +101,80 @@ function ev(e){log('📤 '+e);fetch(B+'/event',{method:'POST',headers:{'Content-
 function stop(){log('🛑 STOP');fetch(B+'/stop',{method:'POST'}).then(r=>log('Stopped')).catch(x=>log('❌ Error'))}
 function ck(){fetch(B+'/status').then(r=>r.json()).then(d=>{document.getElementById('dot').className='dot ok';document.getElementById('st').textContent='Connected'}).catch(x=>{document.getElementById('dot').className='dot';document.getElementById('st').textContent='Disconnected'})}
 setInterval(ck,2000);ck();
+</script>
+</body>
+</html>
+)rawliteral";
+
+// Character Voice Page (for iPhone mounted on robot)
+const char VOICE_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Sheldon Voice</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+h1{font-size:2rem;color:#4ecdc4;margin-bottom:20px}
+#status{font-size:1rem;color:#888;margin-bottom:30px}
+#status.ok{color:#44ff44}
+#event{font-size:3rem;margin-bottom:20px;min-height:60px}
+#speech{font-size:1.2rem;color:#4ecdc4;font-style:italic;text-align:center;padding:20px;min-height:80px}
+#start{padding:30px 60px;font-size:1.5rem;background:#22c55e;border:none;border-radius:20px;color:#fff;margin-bottom:20px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<button id="start" onclick="init()">🔊 TAP TO START</button>
+<div id="main" class="hidden">
+<h1>🤖 Sheldon Voice</h1>
+<div id="status">Connecting...</div>
+<div id="event">--</div>
+<div id="speech">"Waiting for events..."</div>
+</div>
+<script>
+const LINES={
+BOOT:["Systems online. I already regret this.","Boot complete. Try not to break anything."],
+COLLISION:["This is malarkey!","We have made contact with an obstacle. How pedestrian.","That was entirely predictable."],
+STUCK:["I am overwhelmed!","I appear to be immobilized. This is your fault.","The universe is testing my patience."],
+RESET:["Resetting. Again. Predictable.","Fine. We shall try this again."],
+SAW_HUMAN:["You are doomed!","A human. How... unfortunate.","I see you there. Do not touch me."],
+RANDOM:["Bazinga!","Have you suffered a recent blow to the head?","I am not crazy. My mother had me tested."]
+};
+let synth=window.speechSynthesis;
+function init(){
+document.getElementById('start').classList.add('hidden');
+document.getElementById('main').classList.remove('hidden');
+let u=new SpeechSynthesisUtterance("Initializing Sheldon protocol.");
+synth.speak(u);
+poll();
+setInterval(poll,500);
+}
+function poll(){
+fetch('http://192.168.4.1/event').then(r=>r.json()).then(d=>{
+document.getElementById('status').textContent='Connected';
+document.getElementById('status').className='ok';
+if(d.event && d.event!==''){
+let ev=d.event;
+document.getElementById('event').textContent=ev;
+speak(ev);
+}
+}).catch(e=>{
+document.getElementById('status').textContent='Disconnected';
+document.getElementById('status').className='';
+});
+}
+function speak(ev){
+let lines=LINES[ev]||LINES['RANDOM'];
+let line=lines[Math.floor(Math.random()*lines.length)];
+document.getElementById('speech').textContent='"'+line+'"';
+synth.cancel();
+let u=new SpeechSynthesisUtterance(line);
+u.rate=0.9;u.pitch=1.1;
+synth.speak(u);
+}
 </script>
 </body>
 </html>
@@ -199,6 +274,10 @@ bool checkCollision() {
 
 void handleRoot() {
     server.send(200, "text/html", REMOTE_HTML);
+}
+
+void handleVoice() {
+    server.send(200, "text/html", VOICE_HTML);
 }
 
 void sendCORS() {
@@ -363,6 +442,7 @@ void setup() {
     
     // Setup HTTP routes
     server.on("/", HTTP_GET, handleRoot);  // Serve remote control page
+    server.on("/voice", HTTP_GET, handleVoice);  // Serve voice/speaker page
     
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/status", HTTP_OPTIONS, handleOptions);
