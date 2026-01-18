@@ -1,363 +1,421 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sheldon Remote</title>
+    <title>Sheldon Rover</title>
     <style>
-        /* LCARS COLORS */
         :root {
-            --bg: #000;
-            --orange: #ff9900;
-            --purple: #cc99cc;
-            --blue: #9999cc;
-            --red: #cc6666;
-            --text: #000;
+            --bg: #1a1a1a;
+            --panel: #2d2d2d;
+            --accent: #ff9500;
+            --text: #ffffff;
+            --danger: #ff3b30;
+            --success: #34c759;
         }
 
         body {
-            background: var(--bg);
-            color: var(--orange);
-            font-family: Arial, Helvetica, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
-            padding: 0;
+            padding: 20px;
             height: 100vh;
             display: flex;
-            flex-direction: row;
-            overflow: hidden;
-            text-transform: uppercase;
-        }
-
-        /* KEYFRAME ANNIMATION */
-        @keyframes boot {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
-        }
-
-        body {
-            animation: boot 1s ease-out;
-        }
-
-        /* LEFT SIDEBAR (The LCARS Elbow) */
-        .sidebar {
-            width: 100px;
-            background: var(--bg);
-            display: flex;
             flex-direction: column;
+            box-sizing: border-box;
+            overscroll-behavior: none;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
             justify-content: space-between;
-            margin-right: 10px;
-        }
-
-        .elbow-top {
-            height: 120px;
-            background: var(--orange);
-            border-bottom-right-radius: 60px;
-            margin-bottom: 5px;
-            padding: 10px;
-            color: black;
-            font-weight: bold;
-            text-align: right;
-            font-size: 1.2rem;
-        }
-
-        .elbow-stripe {
-            flex-grow: 1;
-            background: var(--purple);
-            width: 80px;
-            margin-bottom: 5px;
-        }
-
-        .elbow-bottom {
-            height: 80px;
-            width: 80px;
-            background: var(--blue);
-            border-top-right-radius: 40px;
-            margin-bottom: 20px;
-        }
-
-        .num {
-            font-size: 0.6rem;
-            text-align: right;
-            display: block;
-            margin-top: 5px;
-        }
-
-        /* MAIN CONTENT */
-        .main {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            padding-top: 10px;
-            padding-right: 10px;
-        }
-
-        /* TOP BAR */
-        .header-bar {
-            display: flex;
-            border-top: 5px solid var(--orange);
-            border-bottom: 5px solid var(--orange);
-            height: 50px;
             align-items: center;
-            justify-content: space-between;
             margin-bottom: 20px;
+            padding: 15px;
+            background: var(--panel);
+            border-radius: 16px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        .status-text {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: var(--orange);
-            padding-left: 20px;
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
         }
 
-        /* MODE BUTTONS */
-        .mode-switch {
+        .dot {
+            width: 10px;
+            height: 10px;
+            background-color: #444;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+
+        .dot.online {
+            background-color: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        .dot.offline {
+            background-color: var(--danger);
+        }
+
+        /* Mode Toggles */
+        .toggles {
+            display: flex;
+            gap: 10px;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .toggle-row {
             display: flex;
             gap: 5px;
+            align-items: center;
+            font-size: 0.8rem;
+            color: #888;
         }
 
-        .lcars-btn {
-            background: var(--blue);
-            color: black;
+        .mode-btn {
+            background: #444;
             border: none;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 1rem;
-            text-align: right;
-            min-width: 100px;
+            color: #888;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
-        .lcars-btn.active {
-            background: var(--orange);
-            color: black;
+        .mode-btn.active {
+            background: var(--accent);
+            color: white;
         }
 
-        .lcars-btn:active {
-            background: white;
-        }
-
-        /* AUDIO GRID */
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .audio-btn {
-            background: var(--purple);
-            color: black;
-            border: none;
-            padding: 20px;
-            border-radius: 30px;
-            /* LCARS pill shape */
-            font-weight: bold;
-            font-size: 0.9rem;
-            text-align: right;
-        }
-
-        .audio-btn.red {
-            background: var(--red);
-        }
-
-        .audio-btn:active {
-            background: white;
-        }
-
-        /* JOYSTICK AREA */
-        .joystick-container {
+        /* Main Content */
+        .container {
             flex-grow: 1;
-            border: 2px solid var(--orange);
-            border-radius: 20px;
-            background: rgba(255, 153, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* Audio Dropdown */
+        .audio-controls {
+            background: var(--panel);
+            padding: 15px;
+            border-radius: 16px;
+            display: flex;
+            gap: 10px;
+        }
+
+        select {
+            flex-grow: 1;
+            background: #444;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .play-btn {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 0 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .play-btn:active {
+            opacity: 0.8;
+        }
+
+        /* Joystick Area */
+        .joystick-zone {
+            flex-grow: 2;
+            background: var(--panel);
+            border-radius: 24px;
             position: relative;
             overflow: hidden;
-            margin-bottom: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 1px solid #333;
+            min-height: 200px;
         }
 
-        /* Custom Joystick Style */
-        #base {
-            position: absolute;
-            width: 120px;
-            height: 120px;
-            border: 2px dashed var(--orange);
+        .joystick-base {
+            width: 140px;
+            height: 140px;
             border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            pointer-events: none;
-            opacity: 0.5;
         }
 
-        #stick {
-            position: absolute;
+        .joystick-handle {
             width: 60px;
             height: 60px;
-            background: var(--orange);
+            background: var(--accent);
             border-radius: 50%;
+            position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            box-shadow: 0 0 15px var(--orange);
+            box-shadow: 0 4px 15px rgba(255, 149, 0, 0.4);
             pointer-events: none;
+            transition: transform 0.1s;
         }
 
-        /* STOP BUTTON */
+        /* Stop Button */
         .stop-btn {
-            background: red;
+            background: var(--danger);
+            width: 100%;
             color: white;
-            font-weight: bold;
             border: none;
-            padding: 15px;
-            font-size: 1.2rem;
-            border-radius: 0 0 20px 20px;
-            text-align: center;
-            letter-spacing: 2px;
+            padding: 20px;
+            border-radius: 16px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 10px rgba(255, 59, 48, 0.3);
+        }
+
+        .stop-btn:active {
+            background: #d32f2f;
+            transform: scale(0.98);
         }
     </style>
 </head>
 
 <body>
 
-    <!-- LCARS SIDEBAR -->
-    <div class="sidebar">
-        <div class="elbow-top">
-            SHELDON<br>ROVER<span class="num">NCC-1701</span>
+    <div class="header">
+        <div class="status-badge">
+            <div id="status-dot" class="dot"></div>
+            <span id="status-text">CONNECTING...</span>
         </div>
-        <div class="elbow-stripe"></div>
-        <div class="elbow-stripe" style="background:var(--blue); flex-grow:0.5"></div>
-        <div class="elbow-bottom"></div>
-    </div>
-
-    <!-- MAIN INTERFACE -->
-    <div class="main">
-
-        <!-- HEADER / STATUS -->
-        <div class="header-bar">
-            <div class="status-text" id="status">OFFLINE</div>
-            <div class="mode-switch">
-                <button class="lcars-btn active" id="btn-man" onclick="setMode('MANUAL')">MANUAL</button>
-                <button class="lcars-btn" id="btn-auto" onclick="setMode('AUTO')">AUTO</button>
+        <div class="toggles">
+            <div class="toggle-row">
+                <span>VOICE:</span>
+                <button class="mode-btn active" id="v-auto" onclick="setMode('voice', 'AUTO')">AUTO</button>
+                <button class="mode-btn" id="v-man" onclick="setMode('voice', 'MANUAL')">MANUAL</button>
+            </div>
+            <div class="toggle-row">
+                <span>DRIVE:</span>
+                <button class="mode-btn" id="d-auto" onclick="setMode('drive', 'AUTO')">AUTO</button>
+                <button class="mode-btn active" id="d-man" onclick="setMode('drive', 'MANUAL')">MANUAL</button>
             </div>
         </div>
+    </div>
 
-        <!-- AUDIO COMMANDS -->
-        <div class="grid">
-            <button class="audio-btn red" onclick="ev('COLLISION')">COLLISION</button>
-            <button class="audio-btn" onclick="ev('RANDOM')">BAZINGA</button>
-            <button class="audio-btn" onclick="ev('STUCK')">STUCK</button>
-            <button class="audio-btn" onclick="ev('SAW_HUMAN')">HUMAN</button>
+    <div class="container">
+
+        <!-- Audio Manual Control -->
+        <div class="audio-controls">
+            <select id="audioList">
+                <option value="">Loading sounds...</option>
+            </select>
+            <button class="play-btn" onclick="playSelected()">▶</button>
         </div>
 
-        <!-- JOYSTICK -->
-        <div class="joystick-container" id="zone">
-            <div id="base"></div>
-            <div id="stick"></div>
+        <!-- Joystick -->
+        <div class="joystick-zone" id="zone">
+            <div class="joystick-base"></div>
+            <div class="joystick-handle" id="stick"></div>
         </div>
 
-        <button class="stop-btn" onclick="stop()">EMERGENCY STOP</button>
+        <button class="stop-btn" onclick="stop()">
+            <span>🛑</span> EMERGENCY STOP
+        </button>
     </div>
 
     <script>
-        const B = 'http://192.168.4.1';
-        let mode = 'MANUAL';
-        let joy = { x: 0, y: 0, active: false };
-        let lastSent = 0;
+        const BASE_URL = window.location.origin;
+        let modes = { drive: 'MANUAL', voice: 'AUTO' };
+        let joystick = { x: 0, y: 0, active: false };
+        let lastSentTime = 0;
 
-        // --- Networking ---
-        function send(endpoint, data) {
-            fetch(B + endpoint, {
+        // --- API Helpers ---
+        const api = {
+            post: (endpoint, data) => fetch(`${BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
-            }).catch(e => console.log('Err:', e));
-        }
+            }).catch(console.error),
 
-        function ev(e) { send('/event', { event: e }); }
-        function stop() { send('/stop', {}); setMode('MANUAL'); }
+            get: (endpoint) => fetch(`${BASE_URL}${endpoint}`).then(r => r.json())
+        };
 
-        function setMode(m) {
-            mode = m;
-            document.getElementById('btn-man').className = m === 'MANUAL' ? 'lcars-btn active' : 'lcars-btn';
-            document.getElementById('btn-auto').className = m === 'AUTO' ? 'lcars-btn active' : 'lcars-btn';
-            send('/mode', { mode: m });
-        }
+        // --- Init Audio List ---
+        api.get('/audio_map.json').then(map => {
+            const sel = document.getElementById('audioList');
+            sel.innerHTML = '<option value="">-- Select Audio --</option>';
+            
+            // Iterate all categories
+            for (const [category, files] of Object.entries(map)) {
+                const grp = document.createElement('optgroup');
+                grp.label = category.replace('_', ' '); // Make "SAW_HUMAN" read "SAW HUMAN"
+                
+                files.forEach(f => {
+                    const opt = document.createElement('option');
+                    // "SAY:filename.mp3" triggers specific file playback in the voice app
+                    opt.value = "SAY:" + f; 
+                    opt.innerText = f.replace('.mp3', '').replace(/_/g, ' ');
+                    grp.appendChild(opt);
+                });
+                sel.appendChild(grp);
+            }
 
-        // --- Status Check ---
-        setInterval(() => {
-            fetch(B + '/status').then(r => r.json()).then(d => {
-                document.getElementById('status').innerText = 'ONLINE: ' + d.mode;
-                document.getElementById('status').style.color = '#4f4';
-                if (d.mode !== mode) setMode(d.mode);
-            }).catch(() => {
-                document.getElementById('status').innerText = 'OFFLINE';
-                document.getElementById('status').style.color = 'red';
+            // Append Standard Events at the top (Optional, but useful)
+            // Actually, inserting them at the TOP is better.
+            const commonGrp = document.createElement('optgroup');
+            commonGrp.label = "--- COMMANDS ---";
+            const events = [
+                { val: "saw_human", label: "Trigger: Saw Human" },
+                { val: "random", label: "Trigger: Random Bazinga" },
+                { val: "collision", label: "Trigger: Collision" },
+                { val: "stuck", label: "Trigger: Stuck" }
+            ];
+            events.forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e.val;
+                opt.innerText = e.label;
+                commonGrp.appendChild(opt);
             });
-        }, 2000);
+            sel.insertBefore(commonGrp, sel.firstChild.nextSibling); // Insert after default option
+        });
 
-        // --- Joystick Logic (Same as before, just restyled) ---
+        function playSelected() {
+            const val = document.getElementById('audioList').value;
+            if (val) api.post('/event', { event: val });
+        }
+
+        function stop() {
+            api.post('/stop', {});
+            setMode('drive', 'MANUAL');
+        }
+
+        function setMode(type, state) {
+            modes[type] = state;
+            updateModeUI();
+
+            // Send to ESP32
+            api.post('/mode', modes);
+        }
+
+        function updateModeUI() {
+            document.getElementById('v-auto').className = modes.voice === 'AUTO' ? 'mode-btn active' : 'mode-btn';
+            document.getElementById('v-man').className = modes.voice === 'MANUAL' ? 'mode-btn active' : 'mode-btn';
+
+            document.getElementById('d-auto').className = modes.drive === 'AUTO' ? 'mode-btn active' : 'mode-btn';
+            document.getElementById('d-man').className = modes.drive === 'MANUAL' ? 'mode-btn active' : 'mode-btn';
+        }
+
+        // --- Status Polling ---
+        function updateStatus() {
+            api.get('/status').then(data => {
+                const dot = document.getElementById('status-dot');
+                const text = document.getElementById('status-text');
+
+                dot.className = 'dot online';
+                text.innerText = 'ONLINE';
+
+                // Sync mode if changed externally?
+                if (data.driveMode) {
+                    if (data.driveMode !== modes.drive || data.voiceMode !== modes.voice) {
+                        modes.drive = data.driveMode || modes.drive;
+                        modes.voice = data.voiceMode || modes.voice;
+                        updateModeUI();
+                    }
+                }
+            }).catch(() => {
+                document.getElementById('status-dot').className = 'dot offline';
+                document.getElementById('status-text').innerText = 'OFFLINE';
+            });
+        }
+        setInterval(updateStatus, 2000);
+
+        // --- Joystick Logic ---
         const zone = document.getElementById('zone');
         const stick = document.getElementById('stick');
+        const maxDist = 50;
 
-        function moveStick(cx, cy) {
+        function handleMove(clientX, clientY) {
             const rect = zone.getBoundingClientRect();
-            const center = { x: rect.width / 2, y: rect.height / 2 };
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
 
-            let dx = cx - center.x;
-            let dy = cy - center.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const maxDist = 60; // Slightly larger for tablet feels
+            let dx = clientX - rect.left - centerX;
+            let dy = clientY - rect.top - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist > maxDist) {
-                dx = (dx / dist) * maxDist;
-                dy = (dy / dist) * maxDist;
+            if (distance > maxDist) {
+                dx = (dx / distance) * maxDist;
+                dy = (dy / distance) * maxDist;
             }
 
             stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
 
-            const nx = Math.round((dx / maxDist) * 100);
-            const ny = Math.round((dy / maxDist) * -100);
+            const normX = Math.round((dx / maxDist) * 100);
+            const normY = Math.round((dy / maxDist) * -100);
 
-            if (joy.x !== nx || joy.y !== ny) {
-                joy.x = nx;
-                joy.y = ny;
-                if (Date.now() - lastSent > 100) {
-                    send('/move', { x: joy.x, y: joy.y });
-                    lastSent = Date.now();
+            if (joystick.x !== normX || joystick.y !== normY || (Date.now() - lastSentTime > 100)) {
+                joystick.x = normX;
+                joystick.y = normY;
+                if (Date.now() - lastSentTime > 100) {
+                    api.post('/move', { x: joystick.x, y: joystick.y });
+                    lastSentTime = Date.now();
                 }
             }
         }
 
-        zone.addEventListener('touchstart', e => {
+        const startJoy = (e) => {
             e.preventDefault();
-            joy.active = true;
-            if (mode !== 'MANUAL') setMode('MANUAL');
-        });
+            joystick.active = true;
+            if (modes.drive !== 'MANUAL') setMode('drive', 'MANUAL');
+        };
 
-        zone.addEventListener('touchmove', e => {
+        zone.addEventListener('touchstart', startJoy);
+        zone.addEventListener('mousedown', startJoy);
+
+        const moveJoy = (e) => {
+            if (!joystick.active) return;
             e.preventDefault();
-            if (!joy.active) return;
-            const touch = e.touches[0];
-            const rect = zone.getBoundingClientRect();
-            moveStick(touch.clientX - rect.left, touch.clientY - rect.top);
-        });
+            let cx = e.touches ? e.touches[0].clientX : e.clientX;
+            let cy = e.touches ? e.touches[0].clientY : e.clientY;
+            handleMove(cx, cy);
+        };
 
-        zone.addEventListener('touchend', e => {
-            e.preventDefault();
-            joy.active = false;
-            stick.style.transform = `translate(-50%, -50%)`;
-            send('/move', { x: 0, y: 0 });
-        });
+        window.addEventListener('touchmove', moveJoy, { passive: false });
+        window.addEventListener('mousemove', moveJoy);
 
-        // Initial center stick
-        stick.style.top = '50%';
-        stick.style.left = '50%';
+        const endJoy = () => {
+            if (joystick.active) {
+                joystick.active = false;
+                stick.style.transform = `translate(-50%, -50%)`;
+                api.post('/move', { x: 0, y: 0 });
+            }
+        };
+
+        window.addEventListener('touchend', endJoy);
+        window.addEventListener('mouseup', endJoy);
+
     </script>
 </body>
 
